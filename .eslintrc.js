@@ -1,14 +1,37 @@
 module.exports = {
+  root: true,
   env: {
-    node: true,
-    commonjs: true,
-    es2021: true,
+    browser: true,
+    es2020: true,
   },
-  extends: ["eslint:recommended", "plugin:prettier/recommended"],
+  extends: [
+    'eslint:recommended',
+    'plugin:react/recommended',
+    'plugin:react/jsx-runtime',
+    'plugin:react-hooks/recommended',
+    'airbnb',
+    'plugin:prettier/recommended',
+    'prettier',
+  ],
+  ignorePatterns: ['dist', '.eslintrc.cjs'],
   parserOptions: {
-    ecmaVersion: 12,
+    ecmaVersion: 'latest',
+    sourceType: 'module',
+    ecmaFeatures: {
+      jsx: true,
+    },
   },
+  settings: {
+    react: {
+      version: 'detect',
+    },
+  },
+  plugins: ['react-refresh'],
   rules: {
-    "prettier/prettier": "error",
+    'react/jsx-no-target-blank': 'off',
+    'react-refresh/only-export-components': [
+      'warn',
+      { allowConstantExport: true },
+    ],
   },
 };
