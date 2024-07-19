@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const connectDB = async () => {
   try {
@@ -7,9 +7,9 @@ const connectDB = async () => {
       useUnifiedTopology: true,
     });
   } catch (err) {
-    console.error('connection error:', err.message);
+    console.error('MongoDB 연결 중 오류가 발생했습니다:', err.message);
     process.exit(1);
   }
 };
 
-module.exports = connectDB;
+export default connectDB;
