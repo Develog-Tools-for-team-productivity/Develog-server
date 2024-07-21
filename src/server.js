@@ -21,3 +21,5 @@ app.use('/api', userRoutes);
 app.listen(PORT, () => {
   console.log(`서버가 포트 ${PORT}에서 실행되고 있습니다.`);
 });
+
+export default app;

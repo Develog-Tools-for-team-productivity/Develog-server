@@ -1,8 +1,9 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import fetch from 'node-fetch';
 import User from '../models/User.js';
 
+const fetch = (...args) =>
+  import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const secretKey = process.env.SECRET_KEY;
 
 export const registerUser = async (req, res) => {
@@ -15,7 +16,7 @@ export const registerUser = async (req, res) => {
       email,
       password: hashedPassword,
       teamName,
-      githubToken,
+      githubToken: hashedPassword,
       selectedRepositories,
     });
 
