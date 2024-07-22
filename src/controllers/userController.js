@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import Project from '../models/Project.js';
 
 const fetch = (...args) =>
   import('node-fetch').then(({ default: fetch }) => fetch(...args));
@@ -21,7 +22,23 @@ export const registerUser = async (req, res) => {
     });
 
     const savedUser = await newUser.save();
-    res.status(201).json(savedUser);
+
+    const projects = await Promise.all(
+      selectedRepositories.map(async repo => {
+        const newProject = new Project({
+          name: repo.name,
+          repositoryId: repo.id,
+          startDate: new Date(),
+          endDate: null,
+          totalCommits: 0,
+          dailyDeployments: [],
+          userId: savedUser._id,
+        });
+        return await newProject.save();
+      })
+    );
+
+    res.status(201).json({ user: savedUser, projects });
   } catch (err) {
     console.error('사용자 등록 중 오류가 발생했습니다:', err);
     res.status(500).json({ message: err.message });
