@@ -36,7 +36,7 @@ describe('User API', () => {
   });
 
   it('should login a user', async () => {
-    await request.post('/api/register').send({
+    await request.post('/api/registerUser').send({
       email: 'test@example.com',
       password: 'password123',
       teamName: 'Test Team',
