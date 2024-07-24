@@ -33,8 +33,28 @@ export const registerUser = async (req, res) => {
 
     const savedUser = await newUser.save();
 
-    const projects = await Promise.all(
+    const repositoriesData = await Promise.all(
       selectedRepositories.map(async repo => {
+        if (!repo.full_name) {
+          const repoData = await axios.get(
+            `https://api.github.com/repositories/${repo.id}`,
+            {
+              headers: { Authorization: `token ${githubToken}` },
+            }
+          );
+          repo.full_name = repoData.data.full_name;
+        }
+        return repo;
+      })
+    );
+
+    const projects = await Promise.all(
+      repositoriesData.map(async repo => {
+        if (!repo || !repo.full_name) {
+          console.error('유효하지않은 레포지토리입니다', repo);
+          return null;
+        }
+
         try {
           const repoInfo = await getRepositoryInfo(repo.full_name, githubToken);
           const newProject = new Project({
