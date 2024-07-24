@@ -3,8 +3,8 @@ import {
   registerUser,
   loginUser,
   fetchRepositories,
-  getRepositoryInfo,
 } from '../controllers/userController.js';
+import { getRepositoryInfo } from '../controllers/repositoryController.js';
 
 const router = express.Router();
 
