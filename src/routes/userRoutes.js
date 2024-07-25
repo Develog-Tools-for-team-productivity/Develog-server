@@ -3,14 +3,16 @@ import {
   registerUser,
   loginUser,
   fetchRepositories,
+  getUserData,
 } from '../controllers/userController.js';
-import { getRepositoryInfo } from '../controllers/repositoryController.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
 router.post('/registerUser', registerUser);
 router.post('/login', loginUser);
 router.post('/fetch-repositories', fetchRepositories);
-router.post('/getRepositoryInfo', getRepositoryInfo);
+
+router.get('/user-data', authenticateToken, getUserData);
 
 export default router;

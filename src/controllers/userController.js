@@ -123,6 +123,64 @@ export const loginUser = async (req, res) => {
   }
 };
 
+export const getUserData = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const projects = await Project.find({ userId });
+    const stats = [
+      {
+        icon: 'gitCommit',
+        value: 110,
+        label: 'Git Commit',
+      },
+      {
+        icon: 'cycleTime',
+        value: '12d 1h',
+        label: 'Cycle Time',
+      },
+      {
+        icon: 'gitContributors',
+        value: 4,
+        label: 'Git Contributors',
+      },
+      {
+        icon: 'investmentProfile',
+        value: 4,
+        label: 'Investment Profile',
+      },
+    ];
+
+    const extendedStats = {
+      cycleTime: {
+        items: [
+          { value: '16 hour', label: 'Coding' },
+          { value: '2 days', label: 'PickUp' },
+          { value: '7 hour', label: 'Review' },
+          { value: '90 min', label: 'Deploy' },
+        ],
+      },
+      investmentProfile: {
+        items: [
+          { value: 18, label: 'Functional Stories' },
+          { value: 32, label: 'Non-Functional Stories' },
+          { value: 50, label: 'Bugs' },
+          { value: 12, label: 'Others' },
+        ],
+      },
+    };
+
+    res.json({ stats, extendedStats });
+  } catch (error) {
+    console.error('User data fetching error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 export const fetchRepositories = async (req, res) => {
   const { githubToken } = req.body;
 
