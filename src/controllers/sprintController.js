@@ -1,22 +1,8 @@
-import axios from 'axios';
+import { fetchGraphQLData } from '../utils/api.js';
 import Sprint from '../models/Sprint.js';
 
-export const processSprints = async (owner, repo, githubToken) => {
-  const graphqlEndpoint = 'https://api.github.com/graphql';
-
-  const fetchGraphQLData = async (query, variables) => {
-    const response = await axios.post(
-      graphqlEndpoint,
-      { query, variables },
-      {
-        headers: {
-          Authorization: `Bearer ${githubToken}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-    return response.data.data;
-  };
+export const processSprints = async (user, owner, repo) => {
+  const githubToken = user.githubToken;
 
   try {
     const projectQuery = `
@@ -53,10 +39,12 @@ export const processSprints = async (owner, repo, githubToken) => {
         }
       }
     `;
+
     const projectVariables = { owner, repo };
     const { repository } = await fetchGraphQLData(
       projectQuery,
-      projectVariables
+      projectVariables,
+      githubToken
     );
 
     if (!repository.projectsV2.nodes.length) {
@@ -81,6 +69,8 @@ export const processSprints = async (owner, repo, githubToken) => {
           iteration.duration * 24 * 60 * 60 * 1000
       ),
       teamMembers: new Set(),
+      topLabels: [],
+      otherLabelsCount: 0,
       labels: {},
     }));
 
@@ -123,7 +113,8 @@ export const processSprints = async (owner, repo, githubToken) => {
     const itemsVariables = { projectId: project.id };
     const { node: projectData } = await fetchGraphQLData(
       itemsQuery,
-      itemsVariables
+      itemsVariables,
+      githubToken
     );
 
     if (!projectData.items.nodes.length) {
@@ -167,7 +158,7 @@ export const processSprints = async (owner, repo, githubToken) => {
     }));
 
     if (processedSprints.length > 0) {
-      const result = await Sprint.insertMany(processedSprints);
+      await Sprint.insertMany(processedSprints);
     } else {
       console.log('저장할 스프린트 데이터가 없습니다.');
     }

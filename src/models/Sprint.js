@@ -15,6 +15,15 @@ const sprintSchema = new mongoose.Schema({
   otherLabelsCount: Number,
 });
 
+sprintSchema.virtual('issue', {
+  ref: 'Issue',
+  localField: '_id',
+  foreignField: 'sprintId',
+});
+
+sprintSchema.set('toJSON', { virtuals: true });
+sprintSchema.set('toObject', { virtuals: true });
+
 const Sprint = mongoose.model('Sprint', sprintSchema);
 
 export default Sprint;
