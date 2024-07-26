@@ -1,107 +1,114 @@
 import axios from 'axios';
-import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-
 import User from '../models/User.js';
 import Project from '../models/Project.js';
-
-import { encryptToken, decryptToken } from '../utils/ encryption.js';
-import {
-  getRepositoryInfo,
-  updateRepositoryInfo,
-  updateProjects,
-} from './repositoryController.js';
+import PullRequest from '../models/PullRequest.js';
+import { processProject } from './projectController.js';
 import { processPullRequests } from './pullRequestController.js';
 import { processSprints } from './sprintController.js';
 import { processDailyStats } from './dailyStatsController.js';
 import { processIssues } from './issueController.js';
+import { fetchGithubData, fetchPagedGithubData } from '../utils/api.js';
 
-export const registerUser = async (req, res) => {
-  const { email, password, teamName, githubToken, selectedRepositories } =
-    req.body;
-
+export const fetchRepositories = async (req, res) => {
   try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const encryptedGithubToken = encryptToken(githubToken);
-    const newUser = new User({
-      email,
-      password: hashedPassword,
-      teamName,
-      githubToken: encryptedGithubToken,
-      selectedRepositories,
+    const user = await User.findById(req.user.userId);
+    const githubToken = user.githubToken;
+
+    const repositories = await fetchPagedGithubData('user/repos', githubToken);
+
+    const formattedRepositories = repositories.map(repo => ({
+      id: repo.id,
+      name: repo.full_name,
+    }));
+
+    res.json(formattedRepositories);
+  } catch (error) {
+    console.error('레포지토리 가져오기 오류:', error);
+    res.status(500).json({
+      message: '레포지토리를 가져오는 데 실패했습니다.',
+      error: error.message,
     });
-
-    const savedUser = await newUser.save();
-
-    const repositoriesData = await Promise.all(
-      selectedRepositories.map(async repo => {
-        if (!repo.full_name) {
-          const repoData = await axios.get(
-            `https://api.github.com/repositories/${repo.id}`,
-            {
-              headers: { Authorization: `token ${githubToken}` },
-            }
-          );
-          repo.full_name = repoData.data.full_name;
-        }
-        return repo;
-      })
-    );
-
-    const projects = await Promise.all(
-      repositoriesData.map(async repo => {
-        if (!repo || !repo.full_name) {
-          console.error('유효하지않은 레포지토리입니다', repo);
-          return null;
-        }
-
-        try {
-          const repoInfo = await getRepositoryInfo(repo.full_name, githubToken);
-          const newProject = new Project({
-            name: repoInfo.name,
-            startDate: repoInfo.startDate,
-            endDate: repoInfo.endDate,
-            totalCommits: repoInfo.totalCommits,
-            dailyDeployments: repoInfo.dailyDeployments,
-            userId: savedUser._id,
-          });
-          return await newProject.save();
-        } catch (error) {
-          console.error('프로젝트 저장 중 오류가 발생했습니다:', error);
-          return null;
-        }
-      })
-    );
-
-    for (const repo of selectedRepositories) {
-      try {
-        await processPullRequests(repo.full_name, githubToken);
-        const [owner, repoName] = repo.full_name.split('/');
-        await processSprints(owner, repoName, githubToken);
-        await processDailyStats(owner, repoName, githubToken);
-        await processIssues(owner, repoName, githubToken);
-      } catch (error) {
-        console.error(`${repo.full_name}의 데이터 처리 중 오류 발생:`, error);
-      }
-    }
-
-    const validProjects = projects.filter(project => project !== null);
-    res.status(201).json({ user: savedUser, projects: validProjects });
-  } catch (err) {
-    console.error('사용자 등록 중 오류가 발생했습니다:', err);
-    res.status(500).json({ message: '사용자 등록 중 오류가 발생했습니다.' });
   }
 };
 
-export const loginUser = async (req, res) => {
-  const { email, password } = req.body;
-
+export const saveRepositoriesInfo = async (req, res) => {
   try {
-    const user = await User.findOne({ email });
-    if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res
-        .status(400)
-        .json({ message: '유효하지 않은 이메일 또는 비밀번호입니다.' });
+    const { selectedRepositories } = req.body;
+    const user = await User.findById(req.user.userId);
+
+    const results = await Promise.all(
+      selectedRepositories.map(async repo => {
+        try {
+          const [owner, repoName] = repo.name.split('/');
+
+          await processProject(user, repo);
+          await processPullRequests(user, owner, repoName);
+          await processSprints(user, owner, repoName);
+          await processDailyStats(user, owner, repoName);
+          await processIssues(user, owner, repoName);
+
+          return { name: repo.name, status: 'success' };
+        } catch (error) {
+          console.error(`데이터 처리 중 오류 발생:`, error);
+          return { name: repo.name, status: 'error', message: error.message };
+        }
+      })
+    );
+
+    res.json({
+      message: '레포지토리 정보 저장 완료',
+      results: results,
+    });
+  } catch (error) {
+    console.error('프로젝트 저장 중 오류가 발생했습니다:', error);
+    res.status(500).json({
+      message: '레포지토리 정보 저장 중 오류가 발생했습니다.',
+      error: error.message,
+    });
+  }
+};
+
+export const githubAuth = (req, res) => {
+  const scopes = ['read:org', 'repo', 'user:email', 'read:project'];
+  const scopeString = scopes.join(' ');
+
+  const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${process.env.GITHUB_REDIRECT_URI}&scope=${encodeURIComponent(scopeString)}`;
+
+  res.redirect(githubAuthUrl);
+};
+
+export const githubCallback = async (req, res) => {
+  const { code } = req.query;
+  try {
+    const tokenResponse = await axios.post(
+      'https://github.com/login/oauth/access_token',
+      {
+        client_id: process.env.GITHUB_CLIENT_ID,
+        client_secret: process.env.GITHUB_CLIENT_SECRET,
+        code,
+      },
+      {
+        headers: { Accept: 'application/json' },
+      }
+    );
+
+    const accessToken = tokenResponse.data.access_token;
+
+    const userData = await fetchGithubData('user', accessToken);
+
+    let user = await User.findOne({ githubId: userData.id });
+    if (!user) {
+      user = new User({
+        githubId: userData.id,
+        teamName: userData.name || userData.login,
+        githubToken: accessToken,
+        selectedRepositories: [],
+      });
+      await user.save();
+    } else {
+      user.githubToken = accessToken;
+      await user.save();
     }
 
     const secretKey = process.env.JWT_SECRET;
@@ -114,12 +121,15 @@ export const loginUser = async (req, res) => {
       expiresIn: '1h',
     });
 
-    updateUserDataAsync(user._id);
-
-    res.json({ token, message: '로그인에 성공했습니다.' });
-  } catch (err) {
-    console.error('로그인 중 오류가 발생했습니다:', err);
-    res.status(500).json({ message: err.message });
+    res.redirect(`${process.env.CLIENT_URL}/login?token=${token}`);
+  } catch (error) {
+    console.error('GitHub OAuth 에러:', error);
+    if (error.name === 'ValidationError') {
+      console.error('Validation error details:', error.errors);
+    }
+    res.redirect(
+      `${process.env.CLIENT_URL}/login?error=github_oauth_failed&message=${encodeURIComponent(error.message)}`
+    );
   }
 };
 
@@ -132,10 +142,43 @@ export const getUserData = async (req, res) => {
     }
 
     const projects = await Project.find({ userId });
+    const totalCommits = projects.reduce(
+      (sum, project) => sum + (project.totalCommits || 0),
+      0
+    );
+
+    let contributorsSet = new Set();
+
+    for (const project of projects) {
+      try {
+        const pullRequests = await PullRequest.find({
+          repositoryId: project._id,
+        });
+
+        for (const pr of pullRequests) {
+          if (pr.author && pr.author[0] && pr.author[0].username) {
+            contributorsSet.add(pr.author[0].username);
+          }
+          if (pr.reviews) {
+            for (const review of pr.reviews) {
+              if (review.reviewer) {
+                contributorsSet.add(review.reviewer);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error(
+          `Error fetching pull requests for project ${project.name}:`,
+          err
+        );
+      }
+    }
+
     const stats = [
       {
         icon: 'gitCommit',
-        value: 110,
+        value: totalCommits,
         label: 'Git Commit',
       },
       {
@@ -145,7 +188,7 @@ export const getUserData = async (req, res) => {
       },
       {
         icon: 'gitContributors',
-        value: 4,
+        value: contributorsSet.size,
         label: 'Git Contributors',
       },
       {
@@ -178,47 +221,5 @@ export const getUserData = async (req, res) => {
   } catch (error) {
     console.error('User data fetching error:', error);
     res.status(500).json({ message: 'Internal server error' });
-  }
-};
-
-export const fetchRepositories = async (req, res) => {
-  const { githubToken } = req.body;
-
-  try {
-    const response = await axios.get('https://api.github.com/user/repos', {
-      headers: { Authorization: `token ${githubToken}` },
-    });
-
-    res.status(200).json(response.data);
-  } catch (error) {
-    console.error('레포지토리 가져오는 중 오류가 발생했습니다:', error);
-    res.status(500).json({ message: error.message });
-  }
-};
-
-const updateUserDataAsync = async userId => {
-  try {
-    const user = await User.findById(userId);
-    if (!user) {
-      console.error('사용자를 찾을 수 없습니다.');
-      return;
-    }
-
-    const githubToken = decryptToken(user.githubToken);
-    if (!githubToken) {
-      console.error('GitHub 토큰 복호화 실패');
-      return;
-    }
-
-    const updatedRepositories = await updateRepositoryInfo(
-      user.selectedRepositories,
-      githubToken
-    );
-    user.selectedRepositories = updatedRepositories;
-    await user.save();
-
-    await updateProjects(user._id, updatedRepositories, githubToken);
-  } catch (err) {
-    console.error('데이터 업데이트 중 오류가 발생했습니다:', err);
   }
 };
