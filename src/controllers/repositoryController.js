@@ -1,79 +1,63 @@
-import axios from 'axios';
+import { fetchGithubData, fetchPagedGithubData } from '../utils/api.js';
 import Project from '../models/Project.js';
 
 export const getRepositoryInfo = async (repoFullName, githubToken) => {
   try {
     const [owner, repo] = repoFullName.split('/');
 
-    const repoResponse = await axios.get(
-      `https://api.github.com/repos/${owner}/${repo}`,
-      {
-        headers: { Authorization: `token ${githubToken}` },
-      }
+    const repoData = await fetchGithubData(
+      `/repos/${owner}/${repo}`,
+      githubToken
     );
-    const name = repoResponse.data.name;
-    const startDate = new Date(repoResponse.data.created_at);
+    const name = repoData.name;
+    const startDate = new Date(repoData.created_at);
     let endDate = startDate;
     let totalCommits = 0;
-    let commitPage = 1;
-    let hasNextCommitPage = true;
-    while (hasNextCommitPage) {
-      const commitsResponse = await axios.get(
-        `https://api.github.com/repos/${owner}/${repo}/commits?per_page=100&page=${commitPage}`,
-        {
-          headers: { Authorization: `token ${githubToken}` },
-        }
-      );
-      totalCommits += commitsResponse.data.length;
-      hasNextCommitPage = commitsResponse.data.length === 100;
-      commitPage++;
-    }
+
+    const commitsData = await fetchPagedGithubData(
+      `/repos/${owner}/${repo}/commits`,
+      githubToken,
+      { per_page: 100 }
+    );
+    totalCommits = commitsData.length;
 
     let dailyDeployments = {};
-    let page = 1;
-    let hasNextPage = true;
+    const pullRequests = await fetchPagedGithubData(
+      `/repos/${owner}/${repo}/pulls`,
+      githubToken,
+      {
+        state: 'closed',
+        base: 'main',
+        per_page: 100,
+      }
+    );
 
-    while (hasNextPage) {
-      const prResponse = await axios.get(
-        `https://api.github.com/repos/${owner}/${repo}/pulls?state=closed&base=main&per_page=100&page=${page}`,
-        {
-          headers: { Authorization: `token ${githubToken}` },
+    for (const pr of pullRequests) {
+      if (pr.merged_at) {
+        const mergeDate = new Date(pr.merged_at);
+        const branchName = pr.head.ref;
+
+        const compareData = await fetchGithubData(
+          `/repos/${owner}/${repo}/compare/${pr.base.sha}...${pr.head.sha}`,
+          githubToken
+        );
+        const branchCommits = compareData.total_commits;
+
+        const dateKey = mergeDate.toISOString().split('T')[0];
+        if (!dailyDeployments[dateKey]) {
+          dailyDeployments[dateKey] = {
+            date: mergeDate,
+            count: 0,
+            branchNames: new Set(),
+          };
         }
-      );
+        dailyDeployments[dateKey].count += branchCommits;
+        dailyDeployments[dateKey].branchNames.add(branchName);
 
-      for (const pr of prResponse.data) {
-        if (pr.merged_at) {
-          const mergeDate = new Date(pr.merged_at);
-          const branchName = pr.head.ref;
-
-          const compareResponse = await axios.get(
-            `https://api.github.com/repos/${owner}/${repo}/compare/${pr.base.sha}...${pr.head.sha}`,
-            {
-              headers: { Authorization: `token ${githubToken}` },
-            }
-          );
-
-          const branchCommits = compareResponse.data.total_commits;
-
-          const dateKey = mergeDate.toISOString().split('T')[0];
-          if (!dailyDeployments[dateKey]) {
-            dailyDeployments[dateKey] = {
-              date: mergeDate,
-              count: 0,
-              branchNames: new Set(),
-            };
-          }
-          dailyDeployments[dateKey].count += branchCommits;
-          dailyDeployments[dateKey].branchNames.add(branchName);
-
-          if (mergeDate > endDate) {
-            endDate = mergeDate;
-          }
+        if (mergeDate > endDate) {
+          endDate = mergeDate;
         }
       }
-
-      hasNextPage = prResponse.data.length === 100;
-      page++;
     }
 
     dailyDeployments = Object.values(dailyDeployments).map(deploy => ({
