@@ -1,61 +1,62 @@
-import axios from 'axios';
+import { fetchGithubData, fetchPagedGithubData } from '../utils/api.js';
 import PullRequest from '../models/PullRequest.js';
 
-export async function processPullRequests(repositoryName, githubToken) {
-  const [owner, repo] = repositoryName.split('/');
-  let page = 1;
+export async function processPullRequests(user, owner, repoName) {
+  const githubToken = user.githubToken;
   let allPullRequests = [];
 
-  const repoInfo = await axios.get(
-    `https://api.github.com/repos/${owner}/${repo}`,
-    {
-      headers: { Authorization: `token ${githubToken}` },
-    }
-  );
-  const repositoryId = repoInfo.data.id.toString();
+  try {
+    const repoInfo = await fetchGithubData(
+      `/repos/${owner}/${repoName}`,
+      githubToken
+    );
+    const repositoryId = repoInfo.id.toString();
 
-  while (true) {
-    const response = await axios.get(
-      `https://api.github.com/repos/${owner}/${repo}/pulls?state=all&per_page=100&page=${page}`,
-      { headers: { Authorization: `token ${githubToken}` } }
+    const pullRequests = await fetchPagedGithubData(
+      `/repos/${owner}/${repoName}/pulls`,
+      githubToken,
+      { state: 'all', per_page: 100 }
     );
 
-    if (response.data.length === 0) break;
-
-    for (const pr of response.data) {
+    for (const pr of pullRequests) {
       const pullRequestData = {
-        repositoryId: repositoryId,
+        repositoryId,
         title: pr.title,
-        repositoryName: repositoryName,
+        repositoryName: repoName,
         author: [
           { username: pr.user.login, profileImageUrl: pr.user.avatar_url },
         ],
         createdAt: pr.created_at,
         firstCommitAt: await getFirstCommitDate(
           owner,
-          repo,
+          repoName,
           pr.number,
           githubToken
         ),
         prSubmittedAt: pr.created_at,
         firstReviewAt: await getFirstReviewDate(
           owner,
-          repo,
+          repoName,
           pr.number,
           githubToken
         ),
         allApprovedAt: await getAllApprovedDate(
           owner,
-          repo,
+          repoName,
           pr.number,
           githubToken
         ),
         mergedAt: pr.merged_at,
         additions: pr.additions,
         deletions: pr.deletions,
-        commitCount: await getCommitCount(owner, repo, pr.number, githubToken),
-        reviews: await getReviews(owner, repo, pr.number, githubToken),
-        branchStatus: await getBranchStatus(owner, repo, githubToken),
+        commitCount: await getCommitCount(
+          owner,
+          repoName,
+          pr.number,
+          githubToken
+        ),
+        reviews: await getReviews(owner, repoName, pr.number, githubToken),
+        branchStatus: await getBranchStatus(owner, repoName, githubToken),
         sourceBranch: pr.head.ref,
         targetBranch: pr.base.ref,
       };
@@ -63,27 +64,26 @@ export async function processPullRequests(repositoryName, githubToken) {
       allPullRequests.push(pullRequestData);
     }
 
-    page++;
+    await PullRequest.insertMany(allPullRequests);
+
+    return {
+      message: '풀 리퀘스트가 성공적으로 가져와지고 저장되었습니다',
+      count: allPullRequests.length,
+    };
+  } catch (error) {
+    console.error('Pull requests 처리 중 오류 발생:', error);
+    throw error;
   }
-
-  await PullRequest.insertMany(allPullRequests);
-
-  return {
-    message: '풀 리퀘스트가 성공적으로 가져와지고 저장되었습니다',
-    count: allPullRequests.length,
-  };
 }
 
-async function getFirstCommitDate(owner, repo, pullNumber, token) {
+async function getFirstCommitDate(owner, repoName, pullNumber, token) {
   try {
-    const response = await axios.get(
-      `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/commits`,
-      {
-        headers: { Authorization: `token ${token}` },
-      }
+    const data = await fetchGithubData(
+      `/repos/${owner}/${repoName}/pulls/${pullNumber}/commits`,
+      token
     );
-    if (response.data.length > 0) {
-      return new Date(response.data[0].commit.committer.date);
+    if (data.length > 0) {
+      return new Date(data[0].commit.committer.date);
     }
     return null;
   } catch (error) {
@@ -92,16 +92,14 @@ async function getFirstCommitDate(owner, repo, pullNumber, token) {
   }
 }
 
-async function getFirstReviewDate(owner, repo, pullNumber, token) {
+async function getFirstReviewDate(owner, repoName, pullNumber, token) {
   try {
-    const response = await axios.get(
-      `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`,
-      {
-        headers: { Authorization: `token ${token}` },
-      }
+    const data = await fetchGithubData(
+      `/repos/${owner}/${repoName}/pulls/${pullNumber}/reviews`,
+      token
     );
-    if (response.data.length > 0) {
-      return new Date(response.data[0].submitted_at);
+    if (data.length > 0) {
+      return new Date(data[0].submitted_at);
     }
     return null;
   } catch (error) {
@@ -110,17 +108,13 @@ async function getFirstReviewDate(owner, repo, pullNumber, token) {
   }
 }
 
-async function getAllApprovedDate(owner, repo, pullNumber, token) {
+async function getAllApprovedDate(owner, repoName, pullNumber, token) {
   try {
-    const response = await axios.get(
-      `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`,
-      {
-        headers: { Authorization: `token ${token}` },
-      }
+    const data = await fetchGithubData(
+      `/repos/${owner}/${repoName}/pulls/${pullNumber}/reviews`,
+      token
     );
-    const approvals = response.data.filter(
-      review => review.state === 'APPROVED'
-    );
+    const approvals = data.filter(review => review.state === 'APPROVED');
     if (approvals.length > 0) {
       return new Date(approvals[approvals.length - 1].submitted_at);
     }
@@ -134,31 +128,26 @@ async function getAllApprovedDate(owner, repo, pullNumber, token) {
   }
 }
 
-async function getCommitCount(owner, repo, pullNumber, token) {
+async function getCommitCount(owner, repoName, pullNumber, token) {
   try {
-    const response = await axios.get(
-      `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/commits`,
-      {
-        headers: { Authorization: `token ${token}` },
-      }
+    const data = await fetchGithubData(
+      `/repos/${owner}/${repoName}/pulls/${pullNumber}/commits`,
+      token
     );
-    return response.data.length;
+    return data.length;
   } catch (error) {
     console.error('커밋 수를 가져오는 중 오류가 발생했습니다:', error);
     return 0;
   }
 }
 
-async function getReviews(owner, repo, pullNumber, token) {
+async function getReviews(owner, repoName, pullNumber, token) {
   try {
-    const response = await axios.get(
-      `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`,
-      {
-        headers: { Authorization: `token ${token}` },
-      }
+    const data = await fetchGithubData(
+      `/repos/${owner}/${repoName}/pulls/${pullNumber}/reviews`,
+      token
     );
-
-    return response.data.map(review => ({
+    return data.map(review => ({
       reviewer: review.user.login,
       status: review.state.toLowerCase(),
       submittedAt: new Date(review.submitted_at),
@@ -175,29 +164,25 @@ async function getReviews(owner, repo, pullNumber, token) {
   }
 }
 
-async function getBranchStatus(owner, repo, token) {
+async function getBranchStatus(owner, repoName, token) {
   try {
-    const branchesResponse = await axios.get(
-      `https://api.github.com/repos/${owner}/${repo}/branches`,
-      {
-        headers: { Authorization: `token ${token}` },
-      }
+    const branches = await fetchGithubData(
+      `/repos/${owner}/${repoName}/branches`,
+      token
     );
-    const pullsResponse = await axios.get(
-      `https://api.github.com/repos/${owner}/${repo}/pulls?state=all`,
-      {
-        headers: { Authorization: `token ${token}` },
-      }
+    const pulls = await fetchGithubData(
+      `/repos/${owner}/${repoName}/pulls`,
+      token,
+      { state: 'all' }
     );
 
     return {
-      activeBranchCount: branchesResponse.data.length,
+      activeBranchCount: branches.length,
       mergeStatus: {
-        merged: pullsResponse.data.filter(pr => pr.merged_at).length,
-        open: pullsResponse.data.filter(pr => pr.state === 'open').length,
-        closed: pullsResponse.data.filter(
-          pr => pr.state === 'closed' && !pr.merged_at
-        ).length,
+        merged: pulls.filter(pr => pr.merged_at).length,
+        open: pulls.filter(pr => pr.state === 'open').length,
+        closed: pulls.filter(pr => pr.state === 'closed' && !pr.merged_at)
+          .length,
       },
     };
   } catch (error) {

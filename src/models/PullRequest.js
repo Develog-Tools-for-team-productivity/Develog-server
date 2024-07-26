@@ -42,6 +42,7 @@ const pullRequestSchema = new mongoose.Schema({
   },
   sourceBranch: String,
   targetBranch: String,
+  projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project' },
 });
 
 const PullRequest = mongoose.model('PullRequest', pullRequestSchema);
