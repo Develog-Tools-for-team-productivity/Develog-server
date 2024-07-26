@@ -14,6 +14,27 @@ const projectSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 });
 
+projectSchema.virtual('dailyStats', {
+  ref: 'DailyStats',
+  localField: '_id',
+  foreignField: 'projectId',
+});
+
+projectSchema.virtual('pullRequests', {
+  ref: 'PullRequest',
+  localField: '_id',
+  foreignField: 'projectId',
+});
+
+projectSchema.virtual('sprints', {
+  ref: 'Sprint',
+  localField: '_id',
+  foreignField: 'projectId',
+});
+
+projectSchema.set('toJSON', { virtuals: true });
+projectSchema.set('toObject', { virtuals: true });
+
 const Project = mongoose.model('Project', projectSchema);
 
 export default Project;
