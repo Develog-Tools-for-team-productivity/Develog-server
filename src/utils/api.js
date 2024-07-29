@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { handleApiError } from '../utils/handleApiError.js';
 
-const githubApi = axios.create({
+export const githubApi = axios.create({
   baseURL: 'https://api.github.com',
   headers: {
     Accept: 'application/vnd.github.v3+json',

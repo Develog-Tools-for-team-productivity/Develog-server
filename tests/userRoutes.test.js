@@ -37,7 +37,6 @@ describe('User API', () => {
 
   it('should login a user', async () => {
     await request.post('/api/registerUser').send({
-      email: 'test@example.com',
       password: 'password123',
       teamName: 'Test Team',
       githubToken: 'testtoken',
@@ -45,7 +44,6 @@ describe('User API', () => {
     });
 
     const res = await request.post('/api/login').send({
-      email: 'test@example.com',
       password: 'password123',
     });
 
