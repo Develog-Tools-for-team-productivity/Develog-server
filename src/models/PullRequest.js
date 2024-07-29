@@ -11,7 +11,9 @@ const pullRequestSchema = new mongoose.Schema({
     },
   ],
   createdAt: Date,
+
   firstCommitAt: Date,
+  branchCreatedAt: Date,
   prSubmittedAt: Date,
   firstReviewAt: Date,
   allApprovedAt: Date,
