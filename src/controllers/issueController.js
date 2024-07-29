@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Issue from '../models/Issue.js';
 import Sprint from '../models/Sprint.js';
+import Project from '../models/Project.js';
 import { fetchGithubData, fetchPagedGithubData } from '../utils/api.js';
 
 const getRepoInfo = async (owner, repo, token) => {
@@ -46,7 +47,12 @@ export async function processIssues(user, owner, repo) {
   }
 
   try {
-    const repositoryId = await getRepoInfo(owner, repo, githubToken);
+    const existingProject = await Project.findOne({
+      userId: user._id,
+      name: repo,
+    });
+
+    const repositoryId = existingProject._id;
 
     const issues = await fetchPagedGithubData(
       `/repos/${owner}/${repo}/issues`,

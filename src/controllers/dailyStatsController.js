@@ -1,6 +1,8 @@
 import axios from 'axios';
 import DailyStats from '../models/DailyStats.js';
+import Project from '../models/Project.js';
 import { handleApiError } from '../utils/handleApiError.js';
+import { getDailyCommits } from '../utils/getDailyCommits.js';
 
 const githubApi = axios.create({
   baseURL: 'https://api.github.com',
@@ -13,6 +15,7 @@ const getRepoInfo = async (owner, repo, token) => {
     });
     return {
       id: response.data.id.toString(),
+      fullName: response.data.full_name,
       createdAt: new Date(response.data.created_at),
     };
   } catch (error) {
@@ -30,22 +33,6 @@ const getLastCommitDate = async (owner, repo, token) => {
       throw new Error('레포지토리에 커밋이 없습니다');
     }
     return new Date(response.data[0].commit.author.date);
-  } catch (error) {
-    handleApiError(error);
-  }
-};
-
-const getDailyCommits = async (owner, repo, token, since, until) => {
-  try {
-    const response = await githubApi.get(`/repos/${owner}/${repo}/commits`, {
-      params: {
-        sha: 'main',
-        since: since.toISOString(),
-        until: until.toISOString(),
-      },
-      headers: { Authorization: `token ${token}` },
-    });
-    return response.data.length;
   } catch (error) {
     handleApiError(error);
   }
@@ -80,6 +67,11 @@ const getDailyBugFixTime = async (owner, repo, token, since, until) => {
   }
 };
 
+const getProjectIdByRepoId = async fullName => {
+  const project = await Project.findOne({ fullName: fullName });
+  return project ? project._id : null;
+};
+
 const saveDailyStats = async stats => {
   try {
     await DailyStats.findOneAndUpdate(
@@ -102,7 +94,9 @@ export const processDailyStats = async (user, owner, repo) => {
 
   try {
     const repoInfo = await getRepoInfo(owner, repo, githubToken);
+
     const lastCommitDate = await getLastCommitDate(owner, repo, githubToken);
+    const projectId = await getProjectIdByRepoId(repoInfo.fullName);
 
     let currentDate = new Date(repoInfo.createdAt);
     currentDate.setUTCHours(0, 0, 0, 0);
@@ -112,7 +106,7 @@ export const processDailyStats = async (user, owner, repo) => {
       nextDate.setDate(nextDate.getDate() + 1);
 
       const dailyStats = {
-        repositoryId: repoInfo.id,
+        repositoryId: projectId,
         date: new Date(currentDate),
         totalCommits: await getDailyCommits(
           owner,

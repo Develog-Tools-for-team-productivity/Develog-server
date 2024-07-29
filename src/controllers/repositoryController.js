@@ -12,14 +12,6 @@ export const getRepositoryInfo = async (repoFullName, githubToken) => {
     const name = repoData.name;
     const startDate = new Date(repoData.created_at);
     let endDate = startDate;
-    let totalCommits = 0;
-
-    const commitsData = await fetchPagedGithubData(
-      `/repos/${owner}/${repo}/commits`,
-      githubToken,
-      { per_page: 100 }
-    );
-    totalCommits = commitsData.length;
 
     let dailyDeployments = {};
     const pullRequests = await fetchPagedGithubData(
@@ -66,7 +58,7 @@ export const getRepositoryInfo = async (repoFullName, githubToken) => {
       branchName: Array.from(deploy.branchNames).join(', '),
     }));
 
-    return { name, startDate, endDate, totalCommits, dailyDeployments };
+    return { name, startDate, endDate, dailyDeployments };
   } catch (error) {
     console.error(
       '레포지토리 정보 가져오기 오류:',
@@ -105,7 +97,6 @@ export const updateProjects = async (userId, repositories, githubToken) => {
         {
           startDate: repoInfo.startDate,
           endDate: repoInfo.endDate,
-          totalCommits: repoInfo.totalCommits,
           dailyDeployments: repoInfo.dailyDeployments,
         },
         { upsert: true, new: true }
