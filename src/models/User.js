@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema({
     required: true,
     unique: true,
   },
+  userImg: String,
   teamName: String,
   githubToken: String,
   selectedRepositories: [],
