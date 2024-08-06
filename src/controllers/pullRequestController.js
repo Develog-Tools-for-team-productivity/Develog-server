@@ -1,16 +1,17 @@
 import { fetchGithubData, fetchPagedGithubData } from '../utils/api.js';
 import PullRequest from '../models/PullRequest.js';
+import Project from '../models/Project.js';
 
 export async function processPullRequests(user, owner, repoName) {
   const githubToken = user.githubToken;
   let allPullRequests = [];
 
   try {
-    const repoInfo = await fetchGithubData(
-      `/repos/${owner}/${repoName}`,
-      githubToken
-    );
-    const repositoryId = repoInfo.id.toString();
+    const existingProject = await Project.findOne({
+      userId: user._id,
+      name: repoName,
+    });
+    const repositoryId = existingProject._id;
 
     const pullRequests = await fetchPagedGithubData(
       `/repos/${owner}/${repoName}/pulls`,
@@ -19,13 +20,19 @@ export async function processPullRequests(user, owner, repoName) {
     );
 
     for (const pr of pullRequests) {
+      const prDetails = await fetchGithubData(
+        `/repos/${owner}/${repoName}/pulls/${pr.number}`,
+        githubToken
+      );
+
       const pullRequestData = {
         repositoryId,
         title: pr.title,
         repositoryName: repoName,
-        author: [
-          { username: pr.user.login, profileImageUrl: pr.user.avatar_url },
-        ],
+        author: {
+          username: pr.user.login,
+          profileImageUrl: pr.user.avatar_url,
+        },
         createdAt: pr.created_at,
         firstCommitAt: await getFirstCommitDate(
           owner,
@@ -47,8 +54,8 @@ export async function processPullRequests(user, owner, repoName) {
           githubToken
         ),
         mergedAt: pr.merged_at,
-        additions: pr.additions,
-        deletions: pr.deletions,
+        additions: prDetails.additions,
+        deletions: prDetails.deletions,
         commitCount: await getCommitCount(
           owner,
           repoName,

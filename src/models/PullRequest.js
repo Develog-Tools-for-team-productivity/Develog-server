@@ -4,16 +4,12 @@ const pullRequestSchema = new mongoose.Schema({
   repositoryId: String,
   title: String,
   repositoryName: String,
-  author: [
-    {
-      username: String,
-      profileImageUrl: String,
-    },
-  ],
+  author: {
+    username: String,
+    profileImageUrl: String,
+  },
   createdAt: Date,
-
   firstCommitAt: Date,
-  branchCreatedAt: Date,
   prSubmittedAt: Date,
   firstReviewAt: Date,
   allApprovedAt: Date,
