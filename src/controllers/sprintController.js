@@ -1,103 +1,39 @@
 import { fetchGraphQLData } from '../utils/api.js';
 import Sprint from '../models/Sprint.js';
+import Project from '../models/Project.js';
 
-export const processSprints = async (user, owner, repo) => {
-  const githubToken = user.githubToken;
-
-  try {
-    const projectQuery = `
-      query($owner: String!, $repo: String!) {
-        repository(owner: $owner, name: $repo) {
+const projectQuery = `
+  query($owner: String!, $repo: String!, $cursor: String) {
+    repository(owner: $owner, name: $repo) {
+      id
+      name
+      projectsV2(first: 1) {
+        nodes {
           id
-          projectsV2(first: 1) {
+          title
+          items(first: 100, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
             nodes {
               id
-              title
-              fields(first: 20) {
+              fieldValues(first: 20) {
                 nodes {
-                  __typename
-                  ... on ProjectV2IterationField {
-                    id
-                    name
-                    configuration {
-                      iterations {
-                        id
-                        title
-                        startDate
-                        duration
-                      }
-                    }
-                  }
-                  ... on ProjectV2Field {
-                    id
-                    name
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    `;
-
-    const projectVariables = { owner, repo };
-    const { repository } = await fetchGraphQLData(
-      projectQuery,
-      projectVariables,
-      githubToken
-    );
-
-    if (!repository.projectsV2.nodes.length) {
-      return [];
-    }
-
-    const project = repository.projectsV2.nodes[0];
-
-    const iterationField = project.fields.nodes.find(
-      field => field.__typename === 'ProjectV2IterationField'
-    );
-    if (!iterationField) {
-      return [];
-    }
-
-    const sprints = iterationField.configuration.iterations.map(iteration => ({
-      repositoryId: repository.id,
-      name: iteration.title,
-      startDate: new Date(iteration.startDate),
-      endDate: new Date(
-        new Date(iteration.startDate).getTime() +
-          iteration.duration * 24 * 60 * 60 * 1000
-      ),
-      teamMembers: new Set(),
-      topLabels: [],
-      otherLabelsCount: 0,
-      labels: {},
-    }));
-
-    const itemsQuery = `
-      query($projectId: ID!) {
-        node(id: $projectId) {
-          ... on ProjectV2 {
-            items(first: 100) {
-              nodes {
-                id
-                fieldValues(first: 8) {
-                  nodes {
-                    ... on ProjectV2ItemFieldIterationValue {
-                      iterationId
-                    }
-                  }
-                }
-                content {
-                  ... on Issue {
+                  ... on ProjectV2ItemFieldIterationValue {
                     title
-                    number
-                    assignees(first: 10) {
+                    startDate
+                    duration
+                  }
+                  ... on ProjectV2ItemFieldUserValue {
+                    users {
                       nodes {
                         login
                       }
                     }
-                    labels(first: 10) {
+                  }
+                  ... on ProjectV2ItemFieldLabelValue {
+                    labels {
                       nodes {
                         name
                       }
@@ -105,57 +41,153 @@ export const processSprints = async (user, owner, repo) => {
                   }
                 }
               }
+              content {
+                ... on Issue {
+                  title
+                  number
+                  state
+                }
+              }
             }
           }
         }
       }
-    `;
-    const itemsVariables = { projectId: project.id };
-    const { node: projectData } = await fetchGraphQLData(
-      itemsQuery,
-      itemsVariables,
+    }
+  }
+`;
+
+const fetchAllItems = async (owner, repo, githubToken) => {
+  let allItems = [];
+  let hasNextPage = true;
+  let cursor = null;
+  let repositoryInfo = null;
+
+  while (hasNextPage) {
+    const variables = { owner, repo, cursor };
+    const response = await fetchGraphQLData(
+      projectQuery,
+      variables,
       githubToken
     );
 
-    if (!projectData.items.nodes.length) {
+    if (!response?.repository?.projectsV2?.nodes[0]) {
+      throw new Error(
+        'GraphQL 요청 실패 또는 응답 데이터가 올바르지 않습니다.'
+      );
+    }
+
+    if (!repositoryInfo) {
+      const { id, name, projectsV2 } = response.repository;
+      repositoryInfo = {
+        id,
+        name,
+        projectId: projectsV2.nodes[0].id,
+        projectName: projectsV2.nodes[0].title,
+      };
+    }
+
+    const project = response.repository.projectsV2.nodes[0];
+    allItems = allItems.concat(project.items.nodes);
+
+    hasNextPage = project.items.pageInfo.hasNextPage;
+    cursor = project.items.pageInfo.endCursor;
+  }
+
+  return { allItems, repositoryInfo };
+};
+
+const processItem = (item, sprintMap) => {
+  if (!item.fieldValues?.nodes) {
+    console.error(
+      `Field values or nodes are missing for item: ${JSON.stringify(item)}`
+    );
+    return;
+  }
+
+  const sprintInfo = item.fieldValues.nodes.find(
+    field => field.title && field.startDate
+  );
+  if (!sprintInfo) return;
+
+  const { title, startDate, duration } = sprintInfo;
+  if (!sprintMap.has(title)) {
+    sprintMap.set(title, {
+      name: title,
+      startDate: new Date(startDate),
+      endDate: new Date(
+        new Date(startDate).getTime() + duration * 24 * 60 * 60 * 1000
+      ),
+      teamMembers: new Set(),
+      labels: new Map(),
+      issues: [],
+    });
+  }
+  const sprint = sprintMap.get(title);
+
+  if (item.content?.title) {
+    sprint.issues.push({
+      title: item.content.title,
+      number: item.content.number,
+      state: item.content.state,
+    });
+  }
+
+  const userField = item.fieldValues.nodes.find(field => field.users);
+  userField?.users?.nodes?.forEach(user => sprint.teamMembers.add(user.login));
+
+  const labelField = item.fieldValues.nodes.find(field => field.labels);
+  labelField?.labels?.nodes?.forEach(label => {
+    sprint.labels.set(label.name, (sprint.labels.get(label.name) || 0) + 1);
+  });
+};
+
+const prepareSprintData = (sprintMap, repositoryInfo, projectInDb) => {
+  return Array.from(sprintMap.values()).map(sprint => ({
+    repositoryId: repositoryInfo.id,
+    repositoryName: repositoryInfo.name,
+    projectId: projectInDb._id,
+    projectName: repositoryInfo.projectName,
+    name: sprint.name,
+    issues: sprint.issues,
+    startDate: sprint.startDate,
+    endDate: sprint.endDate,
+    teamMembers: Array.from(sprint.teamMembers),
+    topLabels: Array.from(sprint.labels.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name, count]) => ({ name, count })),
+    otherLabelsCount: Math.max(sprint.labels.size - 3, 0),
+  }));
+};
+
+export const processSprints = async (user, owner, repo) => {
+  try {
+    const { allItems, repositoryInfo } = await fetchAllItems(
+      owner,
+      repo,
+      user.githubToken
+    );
+
+    if (allItems.length === 0) {
+      console.log('저장할 스프린트 데이터가 없습니다.');
       return [];
     }
 
-    projectData.items.nodes.forEach(item => {
-      const iterationId = item.fieldValues.nodes.find(
-        fv => fv.iterationId
-      )?.iterationId;
-      const sprint = sprints.find(
-        s =>
-          s.name ===
-          iterationField.configuration.iterations.find(
-            i => i.id === iterationId
-          )?.title
+    const sprintMap = new Map();
+    allItems.forEach(item => processItem(item, sprintMap));
+
+    const projectInDb = await Project.findOne({ fullName: `${owner}/${repo}` });
+    if (!projectInDb) {
+      throw new Error(
+        '해당 GitHub 프로젝트에 매칭되는 MongoDB 프로젝트가 없습니다.'
       );
+    }
 
-      if (sprint && item.content) {
-        item.content.assignees.nodes.forEach(assignee => {
-          sprint.teamMembers.add(assignee.login);
-        });
-        item.content.labels.nodes.forEach(label => {
-          sprint.labels[label.name] = (sprint.labels[label.name] || 0) + 1;
-        });
-      }
-    });
-
-    const processedSprints = sprints.map(sprint => ({
-      _id: sprint._id,
-      repositoryId: sprint.repositoryId,
-      name: sprint.name,
-      startDate: sprint.startDate,
-      endDate: sprint.endDate,
-      teamMembers: Array.from(sprint.teamMembers),
-      topLabels: Object.entries(sprint.labels)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 3)
-        .map(([name, count]) => ({ name, count })),
-      otherLabelsCount: Math.max(Object.keys(sprint.labels).length - 3, 0),
-    }));
+    const processedSprints = prepareSprintData(
+      sprintMap,
+      repositoryInfo,
+      projectInDb
+    );
 
     if (processedSprints.length > 0) {
       await Sprint.insertMany(processedSprints);
@@ -165,10 +197,7 @@ export const processSprints = async (user, owner, repo) => {
 
     return processedSprints;
   } catch (error) {
-    console.error(
-      '오류가 발생했습니다:',
-      error.response?.data || error.message
-    );
+    console.error('오류가 발생했습니다:', error);
     throw error;
   }
 };

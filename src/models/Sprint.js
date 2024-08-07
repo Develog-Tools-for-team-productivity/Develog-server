@@ -2,6 +2,9 @@ import mongoose from 'mongoose';
 
 const sprintSchema = new mongoose.Schema({
   repositoryId: String,
+  repositoryName: String,
+  projectId: String,
+  projectName: String,
   name: String,
   startDate: Date,
   endDate: Date,
@@ -13,6 +16,13 @@ const sprintSchema = new mongoose.Schema({
     },
   ],
   otherLabelsCount: Number,
+  issues: [
+    {
+      title: String,
+      number: Number,
+      state: String,
+    },
+  ],
 });
 
 sprintSchema.virtual('issue', {
