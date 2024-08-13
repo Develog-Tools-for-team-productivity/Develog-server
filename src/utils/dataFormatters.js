@@ -100,7 +100,7 @@ export const formatCycleTimeListData = pullRequests => {
     review: calculateTimeString(pr.allApprovedAt, pr.firstReviewAt),
     deploy: calculateTimeString(pr.mergedAt, pr.allApprovedAt),
     commits: pr.commitCount || 'N/A',
-    prSize: (pr.additions + pr.deletions) / 0.5,
+    prSize: pr.additions + pr.deletions * 0.5,
   }));
 };
 

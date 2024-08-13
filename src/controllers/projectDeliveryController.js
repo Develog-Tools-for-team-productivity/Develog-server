@@ -74,6 +74,35 @@ const getInvestmentProfile = issues => {
   return investmentProfile;
 };
 
+const getMostActive = pullRequests => {
+  const authorActivities = {};
+
+  pullRequests.forEach(pr => {
+    const { author, additions, deletions } = pr;
+    const activity = additions + deletions * 0.5;
+
+    if (authorActivities[author.username]) {
+      authorActivities[author.username].active += activity;
+    } else {
+      authorActivities[author.username] = {
+        name: author.username,
+        active: activity,
+        profileImageUrl: author.profileImageUrl || '',
+      };
+    }
+  });
+
+  const mostActive = Object.values(authorActivities)
+    .sort((a, b) => b.active - a.active)
+    .slice(0, 2)
+    .map(author => ({
+      ...author,
+      active: Math.round(author.active),
+    }));
+
+  return mostActive;
+};
+
 const getSprintInvestmentProfile = (sprints, projectIssues) => {
   return sprints.map(sprint => {
     const sprintIssues = projectIssues.filter(
@@ -119,7 +148,7 @@ const getSprintActivity = (sprints, issues) => {
     );
 
     return {
-      sprintName: sprint.sprintName,
+      sprintName: sprint.name,
       activePeople: getUniqueAuthors(sprintIssues).size,
       startDate: sprint.startDate,
       endDate: sprint.endDate,
@@ -197,7 +226,12 @@ const getPlanningAccuracy = (sprints, issues) => {
   };
 };
 
-const getProjectData = (project, projectIssues, projectSprints) => {
+const getProjectData = (
+  project,
+  projectIssues,
+  projectSprints,
+  projectPullRequests
+) => {
   const sortedSprints = projectSprints
     .filter(sprint => sprint && sprint.startDate && sprint.endDate)
     .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
@@ -215,6 +249,7 @@ const getProjectData = (project, projectIssues, projectSprints) => {
     projectNumber: project.length,
     teamSize,
     topContributors: getTopLabels(countLabels(projectIssues), 2),
+    mostActive: getMostActive(projectPullRequests),
     sprintActivity: hasNoSprints
       ? []
       : getSprintActivity(sortedSprints, projectIssues),
@@ -247,7 +282,7 @@ export const getProjects = async (req, res) => {
     ]);
 
     const totalProjects = projects.length;
-    const uniquePeople = getUniqueAuthors(pullRequests);
+    const uniquePeople = getUniqueAuthors(issues);
     const totalPeople = uniquePeople.size;
 
     const labelCounts = countLabels(issues);
@@ -270,9 +305,11 @@ export const getProjects = async (req, res) => {
         const projectSprints = sprints.filter(
           sprint => sprint.projectId.toString() === project._id.toString()
         );
+
         const projectPullRequests = pullRequests.filter(
           pr =>
-            pr.projectId && pr.projectId.toString() === project._id.toString()
+            pr.repositoryId &&
+            pr.repositoryId.toString() === project._id.toString()
         );
 
         if (projectPullRequests.length === 0) {
