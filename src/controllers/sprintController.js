@@ -25,20 +25,6 @@ const projectQuery = `
                     startDate
                     duration
                   }
-                  ... on ProjectV2ItemFieldUserValue {
-                    users {
-                      nodes {
-                        login
-                      }
-                    }
-                  }
-                  ... on ProjectV2ItemFieldLabelValue {
-                    labels {
-                      nodes {
-                        name
-                      }
-                    }
-                  }
                 }
               }
               content {
@@ -117,8 +103,6 @@ const processItem = (item, sprintMap) => {
       endDate: new Date(
         new Date(startDate).getTime() + duration * 24 * 60 * 60 * 1000
       ),
-      teamMembers: new Set(),
-      labels: new Map(),
       issues: [],
     });
   }
@@ -131,14 +115,6 @@ const processItem = (item, sprintMap) => {
       state: item.content.state,
     });
   }
-
-  const userField = item.fieldValues.nodes.find(field => field.users);
-  userField?.users?.nodes?.forEach(user => sprint.teamMembers.add(user.login));
-
-  const labelField = item.fieldValues.nodes.find(field => field.labels);
-  labelField?.labels?.nodes?.forEach(label => {
-    sprint.labels.set(label.name, (sprint.labels.get(label.name) || 0) + 1);
-  });
 };
 
 const prepareSprintData = (sprintMap, repositoryInfo, projectInDb) => {
@@ -151,12 +127,6 @@ const prepareSprintData = (sprintMap, repositoryInfo, projectInDb) => {
     issues: sprint.issues,
     startDate: sprint.startDate,
     endDate: sprint.endDate,
-    teamMembers: Array.from(sprint.teamMembers),
-    topLabels: Array.from(sprint.labels.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([name, count]) => ({ name, count })),
-    otherLabelsCount: Math.max(sprint.labels.size - 3, 0),
   }));
 };
 

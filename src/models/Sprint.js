@@ -8,14 +8,6 @@ const sprintSchema = new mongoose.Schema({
   name: String,
   startDate: Date,
   endDate: Date,
-  teamMembers: [String],
-  topLabels: [
-    {
-      name: String,
-      count: Number,
-    },
-  ],
-  otherLabelsCount: Number,
   issues: [
     {
       title: String,

@@ -57,6 +57,8 @@ const getInvestmentProfile = issues => {
   };
   investmentProfile.items.push({ label: 'Others', value: 0 });
 
+  let totalCount = 0;
+
   issues.forEach(issue => {
     let categorized = false;
     issue.labels.forEach(label => {
@@ -69,7 +71,15 @@ const getInvestmentProfile = issues => {
     if (!categorized) {
       investmentProfile.items.find(item => item.label === 'Others').value++;
     }
+    totalCount++;
   });
+
+  investmentProfile.items = investmentProfile.items.map(item => ({
+    ...item,
+    percentage: Math.round((item.value / totalCount) * 100),
+  }));
+
+  investmentProfile.totalCount = totalCount;
 
   return investmentProfile;
 };
@@ -116,7 +126,7 @@ const getSprintInvestmentProfile = (sprints, projectIssues) => {
     const totalIssues = sprintIssues.length;
     const labelRatios = Object.entries(labelCounts).map(([label, count]) => ({
       label,
-      ratio: ((count / totalIssues) * 100).toFixed(2),
+      ratio: Math.round((count / totalIssues) * 100),
     }));
 
     const topLabels = labelRatios.sort((a, b) => b.ratio - a.ratio).slice(0, 3);
@@ -143,13 +153,15 @@ const getSprintActivity = (sprints, issues) => {
   return sprints.map(sprint => {
     const sprintIssues = issues.filter(
       issue =>
-        new Date(issue.createdAt) >= new Date(sprint.startDate) &&
-        new Date(issue.createdAt) <= new Date(sprint.endDate)
+        new Date(issue.closedAt) >= new Date(sprint.startDate) &&
+        new Date(issue.closedAt) <= new Date(sprint.endDate)
     );
+
+    const uniqueAuthors = getUniqueAuthors(sprintIssues);
 
     return {
       sprintName: sprint.name,
-      activePeople: getUniqueAuthors(sprintIssues).size,
+      activeIssuePeople: uniqueAuthors.size,
       startDate: sprint.startDate,
       endDate: sprint.endDate,
     };
@@ -160,23 +172,32 @@ const getProjectDeliveryMetrics = (sprints, issues) => {
   if (sprints.length === 0) return null;
 
   return sprints.map(sprint => {
-    const sprintIssues = issues.filter(
-      issue => issue.iteration === sprint.sprintName
-    );
-    const completedIssues = sprintIssues.filter(
-      issue =>
-        issue.closedAt && new Date(issue.closedAt) <= new Date(sprint.endDate)
-    );
-    const carryoverIssues = sprintIssues.filter(
-      issue =>
-        (!issue.closedAt ||
-          new Date(issue.closedAt) > new Date(sprint.endDate)) &&
-        issue.projectStatus === 'OPEN'
+    const sprintStartDate = new Date(sprint.startDate);
+    const sprintEndDate = new Date(sprint.endDate);
+
+    const addedIssues = issues.filter(issue => {
+      const issueCreatedAt = new Date(issue.createdAt);
+      return (
+        issueCreatedAt >= sprintStartDate && issueCreatedAt <= sprintEndDate
+      );
+    });
+
+    const sprintIssues = issues.filter(issue =>
+      sprint.issues.some(sprintIssue => sprintIssue.title === issue.title)
     );
 
+    const completedIssues = sprintIssues.filter(issue => {
+      const issueClosedAt = new Date(issue.closedAt);
+      return issueClosedAt >= sprintStartDate && issueClosedAt <= sprintEndDate;
+    });
+
+    const carryoverIssues = sprintIssues.filter(issue => {
+      return !issue.closedAt || new Date(issue.closedAt) > sprintEndDate;
+    });
+
     return {
-      sprintName: sprint.sprintName,
-      added: sprintIssues.length,
+      sprintName: sprint.name,
+      added: addedIssues.length,
       complete: completedIssues.length,
       carryover: carryoverIssues.length,
       startDate: sprint.startDate,
@@ -185,44 +206,73 @@ const getProjectDeliveryMetrics = (sprints, issues) => {
   });
 };
 
-const getPlanningAccuracy = (sprints, issues) => {
-  if (sprints.length === 0) return null;
+const formatProjectDeliveryMetrics = metricsArray => {
+  if (!metricsArray) return null;
 
-  const firstSprint = sprints[0];
-  const preSprintIssues = issues.filter(
-    issue => new Date(issue.createdAt) < new Date(firstSprint.startDate)
+  const total = metricsArray.reduce(
+    (acc, sprint) => {
+      acc.added += sprint.added;
+      acc.complete += sprint.complete;
+      acc.carryover += sprint.carryover;
+      return acc;
+    },
+    { added: 0, complete: 0, carryover: 0 }
   );
 
-  const sprintPlanningAccuracy = sprints.map(sprint => {
-    const completedIssues = preSprintIssues.filter(
-      issue =>
-        issue.status === 'CLOSED' &&
-        new Date(issue.closedAt) >= new Date(sprint.startDate) &&
-        new Date(issue.closedAt) <= new Date(sprint.endDate)
-    );
+  const formattedTotal = [
+    { label: 'Added', value: total.added },
+    { label: 'Complete', value: total.complete },
+    { label: 'Carryover', value: total.carryover },
+  ];
 
-    const accuracy =
-      preSprintIssues.length > 0
-        ? (completedIssues.length / preSprintIssues.length) * 100
-        : 0;
-
-    return {
-      sprintName: sprint.sprintName,
-      planningAccuracy: accuracy.toFixed(2),
-      startDate: sprint.startDate,
-      endDate: sprint.endDate,
-    };
-  });
-
-  const overallAccuracy =
-    sprintPlanningAccuracy.reduce(
-      (sum, sprint) => sum + parseFloat(sprint.planningAccuracy),
-      0
-    ) / sprintPlanningAccuracy.length;
+  const sprints = metricsArray.reduce((acc, sprint) => {
+    acc[sprint.sprintName] = [
+      { label: 'Added', value: sprint.added },
+      { label: 'Complete', value: sprint.complete },
+      { label: 'Carryover', value: sprint.carryover },
+    ];
+    return acc;
+  }, {});
 
   return {
-    overall: overallAccuracy.toFixed(2),
-    sprints: sprintPlanningAccuracy,
+    total: formattedTotal,
+    sprints: sprints,
+  };
+};
+
+const getPlanningAccuracy = formattedMetrics => {
+  if (!formattedMetrics) return null;
+
+  const calculateAccuracy = (complete, total) => {
+    if (total === 0) return 0;
+    return Math.round((complete / total) * 100);
+  };
+
+  let totalComplete = 0;
+  let totalCarryover = 0;
+
+  const sprintAccuracies = Object.entries(formattedMetrics.sprints).map(
+    ([sprintName, metrics]) => {
+      const complete = metrics.find(m => m.label === 'Complete').value;
+      const carryover = metrics.find(m => m.label === 'Carryover').value;
+      const total = complete + carryover;
+      const value = calculateAccuracy(complete, total);
+
+      totalComplete += complete;
+      totalCarryover += carryover;
+
+      return { sprintName, value };
+    }
+  );
+
+  const totalValue = calculateAccuracy(
+    totalComplete,
+    totalComplete + totalCarryover
+  );
+
+  return {
+    sprints: sprintAccuracies,
+    total: totalValue,
   };
 };
 
@@ -239,9 +289,15 @@ const getProjectData = (
   const hasNoSprints = sortedSprints.length === 0;
   const teamSize = getUniqueAuthors(projectIssues).size;
   const investmentProfile = getInvestmentProfile(projectIssues);
+  const rawProjectDeliveryMetrics = hasNoSprints
+    ? null
+    : getProjectDeliveryMetrics(sortedSprints, projectIssues);
+  const projectDeliveryMetrics = hasNoSprints
+    ? null
+    : formatProjectDeliveryMetrics(rawProjectDeliveryMetrics);
   const planningAccuracy = hasNoSprints
     ? null
-    : getPlanningAccuracy(sortedSprints, projectIssues);
+    : getPlanningAccuracy(projectDeliveryMetrics);
 
   return {
     projectId: project._id,
@@ -260,13 +316,12 @@ const getProjectData = (
     sprintInvestmentProfiles: hasNoSprints
       ? []
       : getSprintInvestmentProfile(sortedSprints, projectIssues),
-    projectDeliveryMetrics: hasNoSprints
-      ? null
-      : getProjectDeliveryMetrics(sortedSprints, projectIssues),
+    projectDeliveryMetrics,
     planningAccuracy,
     summaryData: {
       activePeople: teamSize,
       investmentProfile: investmentProfile.items,
+      totalInvestmentCount: investmentProfile.totalCount,
       planningAccuracy: planningAccuracy ? planningAccuracy.overall : 0,
     },
   };
