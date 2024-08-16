@@ -329,11 +329,15 @@ const getProjectData = (
 
 export const getProjects = async (req, res) => {
   try {
-    const [projects, sprints, issues, pullRequests] = await Promise.all([
-      Project.find(),
-      Sprint.find(),
-      Issue.find(),
-      PullRequest.find(),
+    const { userId } = req.user;
+
+    const projects = await Project.find({ userId });
+    const projectIds = projects.map(project => project._id);
+
+    const [sprints, issues, pullRequests] = await Promise.all([
+      Sprint.find({ projectId: { $in: projectIds } }),
+      Issue.find({ projectId: { $in: projectIds } }),
+      PullRequest.find({ projectId: { $in: projectIds } }),
     ]);
 
     const totalProjects = projects.length;
