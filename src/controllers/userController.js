@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
@@ -56,6 +57,16 @@ export const saveRepositoriesInfo = async (req, res) => {
       newRepositories.map(async repo => {
         try {
           const [owner, repoName] = repo.name.split('/');
+
+          const webhookUrl = `https://${process.env.SERVER_URL}/api/webhook`;
+          const webhookSecret = process.env.WEBHOOK_SECRET;
+          await createWebhook(
+            owner,
+            repoName,
+            user.githubToken,
+            webhookUrl,
+            webhookSecret
+          );
           await processProject(user, repo);
           await processPullRequests(user, owner, repoName);
           await processSprints(user, owner, repoName);
@@ -83,11 +94,44 @@ export const saveRepositoriesInfo = async (req, res) => {
 };
 
 export const githubAuth = (req, res) => {
-  const scopes = ['read:org', 'repo', 'user:email', 'read:project'];
+  const scopes = [
+    'read:org',
+    'repo',
+    'user:email',
+    'read:project',
+    'admin:org_hook',
+  ];
   const scopeString = scopes.join(' ');
   const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${process.env.GITHUB_REDIRECT_URI}&scope=${encodeURIComponent(scopeString)}`;
   res.redirect(githubAuthUrl);
 };
+
+async function createWebhook(owner, repo, accessToken, webhookUrl, secret) {
+  const url = `https://api.github.com/repos/${owner}/${repo}/hooks`;
+  const data = {
+    name: 'web',
+    active: true,
+    events: ['push', 'pull_request'],
+    config: {
+      url: webhookUrl,
+      content_type: 'json',
+      secret: secret,
+    },
+  };
+
+  try {
+    const response = await axios.post(url, data, {
+      headers: {
+        Authorization: `token ${accessToken}`,
+        Accept: 'application/vnd.github.v3+json',
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('웹훅 생성 중 오류:', error.response.data);
+    throw error;
+  }
+}
 
 export const githubCallback = async (req, res) => {
   const { code } = req.query;
@@ -204,3 +248,39 @@ export const validateToken = async (req, res) => {
     res.status(401).json({ isValid: false, message: '유효하지않은 토큰' });
   }
 };
+
+export const handleWebhook = async (req, res) => {
+  const signature = req.headers['x-hub-signature-256'];
+  const event = req.headers['x-github-event'];
+  const payload = req.body;
+  const secret = process.env.WEBHOOK_SECRET;
+  const hmac = crypto.createHmac('sha256', secret);
+  const digest = 'sha256=' + hmac.update(JSON.stringify(payload)).digest('hex');
+
+  if (signature !== digest) {
+    return res.status(401).send('Unauthorized');
+  }
+
+  switch (event) {
+    case 'push':
+      console.log('Push 이벤트 수신:', payload.repository.name);
+      await handlePushEvent(payload);
+      break;
+    case 'pull_request':
+      break;
+    default:
+      console.log(`Unhandled event: ${event}`);
+  }
+
+  res.status(200).send('OK');
+};
+
+async function handlePushEvent(payload) {
+  const repoName = payload.repository.full_name;
+  const branch = payload.ref.split('/').pop();
+  const commits = payload.commits;
+
+  console.log(`Repository: ${repoName}`);
+  console.log(`Branch: ${branch}`);
+  console.log(`Number of commits: ${commits.length}`);
+}
