@@ -252,11 +252,12 @@ async function getExistingWebhooks(owner, repo, accessToken) {
 }
 
 async function createWebhook(owner, repo, accessToken, webhookUrl, secret) {
+  console.log('createWebhook 실행!');
   const url = `https://api.github.com/repos/${owner}/${repo}/hooks`;
   const data = {
     name: 'web',
     active: true,
-    events: ['push', 'pull_request', 'issues'],
+    events: ['push', 'pull_request'],
     config: {
       url: webhookUrl,
       content_type: 'json',
