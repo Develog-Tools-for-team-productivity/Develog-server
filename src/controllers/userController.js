@@ -56,6 +56,7 @@ export const saveRepositoriesInfo = async (req, res) => {
     const results = await Promise.all(
       newRepositories.map(async repo => {
         try {
+          console.log('레포지토리 과정:', repo.name);
           const [owner, repoName] = repo.name.split('/');
           const webhookUrl = `${process.env.SERVER_URL}/api/webhook`;
           const webhookSecret = process.env.WEBHOOK_SECRET;
@@ -75,7 +76,11 @@ export const saveRepositoriesInfo = async (req, res) => {
           await processDailyStats(user, owner, repoName);
           await processIssues(user, owner, repoName);
 
+          console.log('웹훅 있는지 확인:', !existingWebhook);
+
           if (!existingWebhook) {
+            console.log('existingWebhook이라면 웹훅 생성해라');
+
             await createWebhook(
               owner,
               repoName,
@@ -83,8 +88,10 @@ export const saveRepositoriesInfo = async (req, res) => {
               webhookUrl,
               webhookSecret
             );
+            console.log('웹훅 성공적으로 완료');
           }
 
+          console.log('레포지토리 과정 성공적:', repo.name);
           return { name: repo.name, status: 'success' };
         } catch (error) {
           console.error(`데이터 처리 중 오류 발생:`, error);
