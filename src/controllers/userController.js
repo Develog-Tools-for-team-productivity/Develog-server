@@ -21,7 +21,7 @@ export const fetchRepositories = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
     const repositories = await fetchPagedGithubData(
-      'user/repos',
+      'user/repos?affiliation=owner,organization_member',
       user.githubToken
     );
     const formattedRepositories = repositories.map(repo => ({
