@@ -22,6 +22,6 @@ router.get('/auth/github/callback', githubCallback);
 router.get('/dora-metrics', authenticateToken, getDoraMetrics);
 router.get('/projects', authenticateToken, getProjects);
 router.get('/validate-token', validateToken);
-router.post('/api/webhook', handleWebhook);
+router.post('/webhook', handleWebhook);
 
 export default router;
