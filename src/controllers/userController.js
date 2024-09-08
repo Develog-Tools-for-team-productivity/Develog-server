@@ -324,25 +324,29 @@ export const handleWebhook = async (req, res) => {
       return res.status(404).send('User not found');
     }
 
+    let processes;
     switch (event) {
       case 'push':
-        console.log('Push 이벤트 수신:', payload.repository.name);
-        await processSprints(user, owner, repoName);
-        await processIssues(user, owner, repoName);
-        break;
       case 'issues':
-        console.log('Push 이벤트 수신:', payload.repository.name);
-        await processSprints(user, owner, repoName);
-        await processIssues(user, owner, repoName);
+        console.log(`${event} 이벤트 수신:`, payload.repository.name);
+        processes = [
+          processSprints(user, owner, repoName),
+          processIssues(user, owner, repoName),
+        ];
         break;
       case 'pull_request':
         console.log('Pull Request 이벤트 수신:', payload.repository.name);
-        await processPullRequests(user, owner, repoName);
-        await processDailyStats(user, owner, repoName);
+        processes = [
+          processPullRequests(user, owner, repoName),
+          processDailyStats(user, owner, repoName),
+        ];
         break;
       default:
         console.log(`처리되지 않은 이벤트: ${event}`);
+        processes = [];
     }
+
+    await Promise.allSettled(processes);
 
     console.log('웹훅 과정 완료');
     res.status(200).send('OK');
