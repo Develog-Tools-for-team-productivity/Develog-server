@@ -280,10 +280,14 @@ async function createWebhook(owner, repo, accessToken, webhookUrl, secret) {
 }
 
 export const handleWebhook = async (req, res) => {
+  console.log('Headers:', req.headers);
+
   const signature = req.headers['x-hub-signature-256'];
   const event = req.headers['x-github-event'];
   const payload = req.body;
   const secret = process.env.WEBHOOK_SECRET;
+
+  console.log('WEBHOOK_SECRET:', secret);
 
   if (!event || !secret) {
     console.error('필수 웹훅 정보가 누락되었습니다');
