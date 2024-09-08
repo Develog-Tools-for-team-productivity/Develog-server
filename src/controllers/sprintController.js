@@ -48,38 +48,44 @@ const fetchAllItems = async (owner, repo, githubToken) => {
   let cursor = null;
   let repositoryInfo = null;
 
-  while (hasNextPage) {
-    const variables = { owner, repo, cursor };
-    const response = await fetchGraphQLData(
-      projectQuery,
-      variables,
-      githubToken
-    );
-
-    if (!response?.repository?.projectsV2?.nodes[0]) {
-      throw new Error(
-        'GraphQL 요청 실패 또는 응답 데이터가 올바르지 않습니다.'
+  try {
+    while (hasNextPage) {
+      const variables = { owner, repo, cursor };
+      const response = await fetchGraphQLData(
+        projectQuery,
+        variables,
+        githubToken
       );
+
+      if (!response?.repository?.projectsV2?.nodes[0]) {
+        throw new Error(
+          'GraphQL 요청 실패 또는 응답 데이터가 올바르지 않습니다.'
+        );
+      }
+
+      if (!repositoryInfo) {
+        const { id, name, projectsV2 } = response.repository;
+        repositoryInfo = {
+          id,
+          name,
+          projectId: projectsV2.nodes[0].id,
+          projectName: projectsV2.nodes[0].title,
+        };
+      }
+
+      const project = response.repository.projectsV2.nodes[0];
+      allItems = allItems.concat(project.items.nodes);
+      hasNextPage = project.items.pageInfo.hasNextPage;
+      cursor = project.items.pageInfo.endCursor;
     }
 
-    if (!repositoryInfo) {
-      const { id, name, projectsV2 } = response.repository;
-      repositoryInfo = {
-        id,
-        name,
-        projectId: projectsV2.nodes[0].id,
-        projectName: projectsV2.nodes[0].title,
-      };
-    }
-
-    const project = response.repository.projectsV2.nodes[0];
-    allItems = allItems.concat(project.items.nodes);
-
-    hasNextPage = project.items.pageInfo.hasNextPage;
-    cursor = project.items.pageInfo.endCursor;
+    return { allItems, repositoryInfo };
+  } catch (error) {
+    console.error('fetchAllItems 함수 실행 중 오류 발생:', error.message);
+    throw new Error(
+      `데이터를 가져오는 중 오류가 발생했습니다: ${error.message}`
+    );
   }
-
-  return { allItems, repositoryInfo };
 };
 
 const processItem = (item, sprintMap) => {

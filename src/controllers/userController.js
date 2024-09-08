@@ -68,40 +68,13 @@ export const saveRepositoriesInfo = async (req, res) => {
             hook => hook.config.url === webhookUrl
           );
 
-          try {
-            await processProject(user, repo);
-          } catch (error) {
-            console.error(`프로젝트 처리 중 오류 발생: ${error.message}`);
-          }
+          await processProject(user, repo);
+          await processPullRequests(user, owner, repoName);
+          await processSprints(user, owner, repoName);
+          await processDailyStats(user, owner, repoName);
+          await processIssues(user, owner, repoName);
 
-          try {
-            await processPullRequests(user, owner, repoName);
-          } catch (error) {
-            console.error(`Pull Requests 처리 중 오류 발생: ${error.message}`);
-          }
-
-          try {
-            await processSprints(user, owner, repoName);
-          } catch (error) {
-            console.error(`Sprints 처리 중 오류 발생: ${error.message}`);
-          }
-
-          try {
-            await processDailyStats(user, owner, repoName);
-          } catch (error) {
-            console.error(`Daily Stats 처리 중 오류 발생: ${error.message}`);
-          }
-
-          try {
-            await processIssues(user, owner, repoName);
-          } catch (error) {
-            console.error(`Issues 처리 중 오류 발생: ${error.message}`);
-          }
-
-          if (existingWebhook) {
-            console.log('이미 존재하는 웹훅:', existingWebhook);
-            return { name: repo.name, status: 'webhook exists' };
-          } else {
+          if (!existingWebhook) {
             await createWebhook(
               owner,
               repoName,
