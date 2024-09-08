@@ -59,14 +59,28 @@ export const saveRepositoriesInfo = async (req, res) => {
           const [owner, repoName] = repo.name.split('/');
           const webhookUrl = `${process.env.SERVER_URL}/api/webhook`;
           const webhookSecret = process.env.WEBHOOK_SECRET;
-
-          await createWebhook(
+          const existingWebhooks = await getExistingWebhooks(
             owner,
-            repoName,
-            user.githubToken,
-            webhookUrl,
-            webhookSecret
+            repo,
+            user.githubToken
           );
+          const existingWebhook = existingWebhooks.find(
+            hook => hook.config.url === webhookUrl
+          );
+
+          if (existingWebhook) {
+            console.log('이미 존재하는 웹훅:', existingWebhook);
+
+            return;
+          } else {
+            await createWebhook(
+              owner,
+              repoName,
+              user.githubToken,
+              webhookUrl,
+              webhookSecret
+            );
+          }
           await processProject(user, repo);
           await processPullRequests(user, owner, repoName);
           await processSprints(user, owner, repoName);
@@ -221,6 +235,22 @@ export const validateToken = async (req, res) => {
   }
 };
 
+async function getExistingWebhooks(owner, repo, accessToken) {
+  const url = `https://api.github.com/repos/${owner}/${repo}/hooks`;
+  try {
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.github.v3+json',
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('웹훅 목록 가져오기 오류:', error.response.data);
+    throw error;
+  }
+}
+
 async function createWebhook(owner, repo, accessToken, webhookUrl, secret) {
   const url = `https://api.github.com/repos/${owner}/${repo}/hooks`;
   const data = {
@@ -256,34 +286,44 @@ export const handleWebhook = async (req, res) => {
   const secret = process.env.WEBHOOK_SECRET;
 
   if (!event || !secret) {
-    console.error('Missing required webhook information');
-    return res.status(400).send('Bad Request: Missing required information');
+    console.error('필수 웹훅 정보가 누락되었습니다');
+    return res.status(400).send('잘못된 요청: 필요한 정보가 누락되었습니다.');
   }
 
   const hmac = crypto.createHmac('sha256', secret);
   const digest = 'sha256=' + hmac.update(JSON.stringify(payload)).digest('hex');
+  const signatureBuffer = Buffer.from(signature || '', 'utf8');
+  const digestBuffer = Buffer.from(digest, 'utf8');
 
-  if (signature !== digest) {
-    console.error('Unauthorized webhook request');
+  if (
+    signatureBuffer.length !== digestBuffer.length ||
+    !crypto.timingSafeEqual(signatureBuffer, digestBuffer)
+  ) {
+    console.error('웹훅 요청이 유효하지 않습니다 (시그니처 불일치)');
     return res.status(401).send('Unauthorized');
   }
 
-  console.log('웹훅 연결 완료');
+  console.log('웹훅 연결 완료:', event);
 
-  switch (event) {
-    case 'push':
-      console.log('Push 이벤트 수신:', payload.repository.name);
-      await handlePushEvent(payload);
-      break;
-    case 'pull_request':
-      console.log('Pull Request 이벤트 수신:', payload.repository.name);
-      break;
-    default:
-      console.log(`Unhandled event: ${event}`);
+  try {
+    switch (event) {
+      case 'push':
+        console.log('Push 이벤트 수신:', payload.repository.name);
+        await handlePushEvent(payload);
+        break;
+      case 'pull_request':
+        console.log('Pull Request 이벤트 수신:', payload.repository.name);
+        break;
+      default:
+        console.log(`처리되지 않은 이벤트: ${event}`);
+    }
+
+    console.log('웹훅 과정 완료');
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('웹훅 처리 중 오류:', error);
+    res.status(500).send('Internal Server Error');
   }
-
-  console.log('웹훅 과정 완료');
-  res.status(200).send('OK');
 };
 
 async function handlePushEvent(payload) {
