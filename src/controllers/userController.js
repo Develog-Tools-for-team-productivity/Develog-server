@@ -241,6 +241,7 @@ async function createWebhook(owner, repo, accessToken, webhookUrl, secret) {
         Accept: 'application/vnd.github.v3+json',
       },
     });
+    console.log('웹훅 생성 응답:', response.data);
     return response.data;
   } catch (error) {
     console.error('웹훅 생성 중 오류:', error.response.data);
