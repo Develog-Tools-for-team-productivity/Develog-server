@@ -61,7 +61,7 @@ export const saveRepositoriesInfo = async (req, res) => {
           const webhookSecret = process.env.WEBHOOK_SECRET;
           const existingWebhooks = await getExistingWebhooks(
             owner,
-            repo,
+            repoName,
             user.githubToken
           );
           const existingWebhook = existingWebhooks.find(
