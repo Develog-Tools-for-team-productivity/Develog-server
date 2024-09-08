@@ -67,6 +67,7 @@ export const saveRepositoriesInfo = async (req, res) => {
           const existingWebhook = existingWebhooks.find(
             hook => hook.config.url === webhookUrl
           );
+          console.log('기존 웹훅:', existingWebhook);
 
           await processProject(user, repo);
           await processPullRequests(user, owner, repoName);
@@ -112,6 +113,7 @@ export const githubAuth = (req, res) => {
     'user:email',
     'read:project',
     'admin:org_hook',
+    'admin:repo_hook',
   ];
   const scopeString = scopes.join(' ');
   const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${process.env.GITHUB_REDIRECT_URI}&scope=${encodeURIComponent(scopeString)}`;
@@ -312,6 +314,7 @@ export const handleWebhook = async (req, res) => {
   try {
     const repoFullName = payload.repository.full_name;
     const [owner, repoName] = repoFullName.split('/');
+    const repositoryId = payload.repository.id;
     const user = await User.findOne({
       selectedRepositories: { $elemMatch: { name: repoFullName } },
     });
@@ -324,21 +327,28 @@ export const handleWebhook = async (req, res) => {
       return res.status(404).send('User not found');
     }
 
+    const refreshData = async (processFunc, ...args) => {
+      await deleteExistingData(processFunc.name, repositoryId);
+      await processFunc(...args);
+
+      console.log(`${processFunc.name} 데이터 갱신 완료`);
+    };
+
     let processes;
     switch (event) {
       case 'push':
       case 'issues':
         console.log(`${event} 이벤트 수신:`, payload.repository.name);
         processes = [
-          processSprints(user, owner, repoName),
-          processIssues(user, owner, repoName),
+          refreshData(processSprints, user, owner, repoName),
+          refreshData(processIssues, user, owner, repoName),
         ];
         break;
       case 'pull_request':
         console.log('Pull Request 이벤트 수신:', payload.repository.name);
         processes = [
-          processPullRequests(user, owner, repoName),
-          processDailyStats(user, owner, repoName),
+          refreshData(processPullRequests, user, owner, repoName),
+          refreshData(processDailyStats, user, owner, repoName),
         ];
         break;
       default:
@@ -355,3 +365,22 @@ export const handleWebhook = async (req, res) => {
     res.status(500).send('Internal Server Error');
   }
 };
+
+async function deleteExistingData(processName, repositoryId) {
+  switch (processName) {
+    case 'processSprints':
+      await Sprint.deleteMany({ projectId: repositoryId });
+      break;
+    case 'processIssues':
+      await Issue.deleteMany({ repositoryId });
+      break;
+    case 'processPullRequests':
+      await PullRequest.deleteMany({ repositoryId });
+      break;
+    case 'processDailyStats':
+      await DailyStats.deleteMany({ repositoryId });
+      break;
+    default:
+      console.log(`알 수 없는 프로세스: ${processName}`);
+  }
+}
