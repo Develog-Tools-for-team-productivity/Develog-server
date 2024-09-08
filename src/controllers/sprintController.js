@@ -137,6 +137,7 @@ const prepareSprintData = (sprintMap, repositoryInfo, projectInDb) => {
 };
 
 export const processSprints = async (user, owner, repo) => {
+  console.log('웹훅 실행 확인 로그');
   try {
     const { allItems, repositoryInfo } = await fetchAllItems(
       owner,

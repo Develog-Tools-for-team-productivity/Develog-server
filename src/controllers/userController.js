@@ -254,7 +254,7 @@ async function createWebhook(owner, repo, accessToken, webhookUrl, secret) {
   const data = {
     name: 'web',
     active: true,
-    events: ['push', 'pull_request'],
+    events: ['push', 'pull_request', 'issues'],
     config: {
       url: webhookUrl,
       content_type: 'json',
@@ -307,14 +307,38 @@ export const handleWebhook = async (req, res) => {
 
   console.log('웹훅 연결 완료:', event);
 
+  console.log('payload', payload);
+
   try {
+    const repoFullName = payload.repository.full_name;
+    const [owner, repoName] = repoFullName.split('/');
+    const user = await User.findOne({
+      selectedRepositories: { $elemMatch: { name: repoFullName } },
+    });
+
+    if (!user) {
+      console.error(
+        '레포지토리에 해당하는 사용자를 찾을 수 없습니다:',
+        repoFullName
+      );
+      return res.status(404).send('User not found');
+    }
+
     switch (event) {
       case 'push':
         console.log('Push 이벤트 수신:', payload.repository.name);
-        await handlePushEvent(payload);
+        await processSprints(user, owner, repoName);
+        await processIssues(user, owner, repoName);
+        break;
+      case 'issues':
+        console.log('Push 이벤트 수신:', payload.repository.name);
+        await processSprints(user, owner, repoName);
+        await processIssues(user, owner, repoName);
         break;
       case 'pull_request':
         console.log('Pull Request 이벤트 수신:', payload.repository.name);
+        await processPullRequests(user, owner, repoName);
+        await processDailyStats(user, owner, repoName);
         break;
       default:
         console.log(`처리되지 않은 이벤트: ${event}`);
@@ -327,13 +351,3 @@ export const handleWebhook = async (req, res) => {
     res.status(500).send('Internal Server Error');
   }
 };
-
-async function handlePushEvent(payload) {
-  const repoName = payload.repository.full_name;
-  const branch = payload.ref.split('/').pop();
-  const commits = payload.commits;
-
-  console.log(`Repository: ${repoName}`);
-  console.log(`Branch: ${branch}`);
-  console.log(`Number of commits: ${commits.length}`);
-}
