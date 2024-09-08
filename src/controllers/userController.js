@@ -60,11 +60,6 @@ export const saveRepositoriesInfo = async (req, res) => {
           const webhookUrl = `${process.env.SERVER_URL}/api/webhook`;
           const webhookSecret = process.env.WEBHOOK_SECRET;
 
-          await processProject(user, repo);
-          await processPullRequests(user, owner, repoName);
-          await processSprints(user, owner, repoName);
-          await processDailyStats(user, owner, repoName);
-          await processIssues(user, owner, repoName);
           await createWebhook(
             owner,
             repoName,
@@ -72,6 +67,11 @@ export const saveRepositoriesInfo = async (req, res) => {
             webhookUrl,
             webhookSecret
           );
+          await processProject(user, repo);
+          await processPullRequests(user, owner, repoName);
+          await processSprints(user, owner, repoName);
+          await processDailyStats(user, owner, repoName);
+          await processIssues(user, owner, repoName);
           return { name: repo.name, status: 'success' };
         } catch (error) {
           console.error(`데이터 처리 중 오류 발생:`, error);
@@ -237,7 +237,7 @@ async function createWebhook(owner, repo, accessToken, webhookUrl, secret) {
   try {
     const response = await axios.post(url, data, {
       headers: {
-        Authorization: `token ${accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
         Accept: 'application/vnd.github.v3+json',
       },
     });
@@ -267,6 +267,8 @@ export const handleWebhook = async (req, res) => {
     return res.status(401).send('Unauthorized');
   }
 
+  console.log('웹훅 연결 완료');
+
   switch (event) {
     case 'push':
       console.log('Push 이벤트 수신:', payload.repository.name);
@@ -279,6 +281,7 @@ export const handleWebhook = async (req, res) => {
       console.log(`Unhandled event: ${event}`);
   }
 
+  console.log('웹훅 과정 완료');
   res.status(200).send('OK');
 };
 
