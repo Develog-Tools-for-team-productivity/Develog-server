@@ -68,19 +68,6 @@ export const saveRepositoriesInfo = async (req, res) => {
             hook => hook.config.url === webhookUrl
           );
 
-          if (existingWebhook) {
-            console.log('이미 존재하는 웹훅:', existingWebhook);
-            return { name: repo.name, status: 'webhook exists' };
-          } else {
-            await createWebhook(
-              owner,
-              repoName,
-              user.githubToken,
-              webhookUrl,
-              webhookSecret
-            );
-          }
-
           try {
             await processProject(user, repo);
           } catch (error) {
@@ -109,6 +96,19 @@ export const saveRepositoriesInfo = async (req, res) => {
             await processIssues(user, owner, repoName);
           } catch (error) {
             console.error(`Issues 처리 중 오류 발생: ${error.message}`);
+          }
+
+          if (existingWebhook) {
+            console.log('이미 존재하는 웹훅:', existingWebhook);
+            return { name: repo.name, status: 'webhook exists' };
+          } else {
+            await createWebhook(
+              owner,
+              repoName,
+              user.githubToken,
+              webhookUrl,
+              webhookSecret
+            );
           }
 
           return { name: repo.name, status: 'success' };
