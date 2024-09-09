@@ -60,7 +60,6 @@ export const saveRepositoriesInfo = async (req, res) => {
     const results = await Promise.allSettled(
       newRepositories.map(async repo => {
         try {
-          console.log('레포지토리 과정:', repo.name);
           const [owner, repoName] = repo.name.split('/');
           const webhookUrl = `${process.env.SERVER_URL}/api/webhook`;
           const webhookSecret = process.env.WEBHOOK_SECRET;
@@ -72,7 +71,6 @@ export const saveRepositoriesInfo = async (req, res) => {
           const existingWebhook = existingWebhooks.find(
             hook => hook.config.url === webhookUrl
           );
-          console.log('기존 웹훅:', existingWebhook);
 
           await Promise.allSettled([
             processProject(user, repo),
@@ -82,11 +80,7 @@ export const saveRepositoriesInfo = async (req, res) => {
             processIssues(user, owner, repoName),
           ]);
 
-          console.log('웹훅 있는지 확인:', !existingWebhook);
-
           if (!existingWebhook) {
-            console.log('existingWebhook이라면 웹훅 생성해라');
-
             await createWebhook(
               owner,
               repoName,
@@ -94,10 +88,7 @@ export const saveRepositoriesInfo = async (req, res) => {
               webhookUrl,
               webhookSecret
             );
-            console.log('웹훅 성공적으로 완료');
           }
-
-          console.log('레포지토리 과정 성공적:', repo.name);
           return { name: repo.name, status: 'success' };
         } catch (error) {
           console.error(`데이터 처리 중 오류 발생:`, error);
@@ -265,7 +256,6 @@ async function getExistingWebhooks(owner, repo, accessToken) {
 }
 
 async function createWebhook(owner, repo, accessToken, webhookUrl, secret) {
-  console.log('createWebhook 실행!');
   const url = `https://api.github.com/repos/${owner}/${repo}/hooks`;
   const data = {
     name: 'web',
@@ -285,7 +275,6 @@ async function createWebhook(owner, repo, accessToken, webhookUrl, secret) {
         Accept: 'application/vnd.github.v3+json',
       },
     });
-    console.log('웹훅 생성 응답:', response.data);
     return response.data;
   } catch (error) {
     console.error('웹훅 생성 중 오류:', error.response.data);
@@ -293,21 +282,15 @@ async function createWebhook(owner, repo, accessToken, webhookUrl, secret) {
   }
 }
 
-console.log('웹훅 존재하는가:', getExistingWebhooks);
-
 if (!getExistingWebhooks) {
   createWebhook(owner, repo, accessToken, webhookUrl, secret);
 }
 
 export const handleWebhook = async (req, res) => {
-  console.log('Headers:', req.headers);
-
   const signature = req.headers['x-hub-signature-256'];
   const event = req.headers['x-github-event'];
   const payload = req.body;
   const secret = process.env.WEBHOOK_SECRET;
-
-  console.log('WEBHOOK_SECRET:', secret);
 
   if (!event || !secret) {
     console.error('필수 웹훅 정보가 누락되었습니다');
@@ -327,10 +310,6 @@ export const handleWebhook = async (req, res) => {
     return res.status(401).send('Unauthorized');
   }
 
-  console.log('웹훅 연결 완료:', event);
-
-  console.log('payload', payload);
-
   try {
     const repoFullName = payload.repository.full_name;
     const [owner, repoName] = repoFullName.split('/');
@@ -348,42 +327,29 @@ export const handleWebhook = async (req, res) => {
     }
 
     const refreshData = async (processFunc, ...args) => {
-      console.log(
-        'processFunc',
-        processFunc.name,
-        'repositoryId',
-        repositoryId
-      );
       await deleteExistingData(processFunc.name, repositoryId);
       await processFunc(...args);
-
-      console.log(`${processFunc.name} 데이터 갱신 완료`);
     };
 
     let processes;
     switch (event) {
       case 'issues':
-        console.log(`${event} 이벤트 수신:`, payload.repository.name);
         processes = [
           refreshData(processIssues, user, owner, repoName),
           refreshData(processSprints, user, owner, repoName),
         ];
         break;
       case 'pull_request':
-        console.log('Pull Request 이벤트 수신:', payload.repository.name);
         processes = [
           refreshData(processPullRequests, user, owner, repoName),
           refreshData(processDailyStats, user, owner, repoName),
         ];
         break;
       default:
-        console.log(`처리되지 않은 이벤트: ${event}`);
         processes = [];
     }
 
     await Promise.allSettled(processes);
-
-    console.log('웹훅 과정 완료');
     res.status(200).send('OK');
   } catch (error) {
     retryWebhookRequest(
@@ -400,31 +366,19 @@ export const handleWebhook = async (req, res) => {
 };
 
 async function deleteExistingData(processName, repositoryId) {
-  console.log(
-    'deleteExistingData 실행',
-    'processName:',
-    processName,
-    'repositoryId',
-    repositoryId
-  );
-
   try {
     switch (processName) {
       case 'processIssues':
         await Issue.deleteMany({ repositoryId });
-        console.log('Issue 데이터 삭제 완료');
         break;
       case 'processPullRequests':
         await PullRequest.deleteMany({ repositoryId });
-        console.log('PullRequest 데이터 삭제 완료');
         break;
       case 'processDailyStats':
         await DailyStats.deleteMany({ repositoryId });
-        console.log('DailyStats 데이터 삭제 완료');
         break;
       case 'processSprints':
         await Sprint.deleteMany({ projectId: repositoryId });
-        console.log('Sprint 데이터 삭제 완료');
         break;
       default:
         console.log(`알 수 없는 프로세스: ${processName}`);
@@ -435,8 +389,6 @@ async function deleteExistingData(processName, repositoryId) {
       error
     );
   }
-
-  console.log('deleteExistingData 끝');
 }
 
 async function retryWebhookRequest(
@@ -454,14 +406,12 @@ async function retryWebhookRequest(
   while (attempt < maxRetries) {
     try {
       await createWebhook(owner, repo, accessToken, webhookUrl, secret);
-      console.log('웹훅 생성 성공');
       return;
     } catch (error) {
       attempt++;
       console.error(`웹훅 생성 실패 (시도: ${attempt}/${maxRetries}):`, error);
 
       if (attempt < maxRetries) {
-        console.log(`다음 재시도는 ${delay}ms 후에 시작합니다...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         delay *= 2;
       } else {
