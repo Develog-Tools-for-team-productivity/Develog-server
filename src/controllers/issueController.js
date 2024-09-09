@@ -185,7 +185,6 @@ async function processIssue(issueData, repositoryId, projectId) {
 }
 
 export async function processIssues(user, owner, repo) {
-  console.log('웹훅 실행 확인 로그');
   const githubToken = user.githubToken;
 
   if (!githubToken) {
