@@ -287,6 +287,12 @@ async function createWebhook(owner, repo, accessToken, webhookUrl, secret) {
   }
 }
 
+console.log('웹훅 존재하는가:', getExistingWebhooks);
+
+if (!getExistingWebhooks) {
+  createWebhook(owner, repo, accessToken, webhookUrl, secret);
+}
+
 export const handleWebhook = async (req, res) => {
   console.log('Headers:', req.headers);
 
@@ -369,6 +375,14 @@ export const handleWebhook = async (req, res) => {
     console.log('웹훅 과정 완료');
     res.status(200).send('OK');
   } catch (error) {
+    retryWebhookRequest(
+      owner,
+      repo,
+      accessToken,
+      webhookUrl,
+      secret,
+      (retries = 5)
+    );
     console.error('웹훅 처리 중 오류:', error);
     res.status(500).send('Internal Server Error');
   }
@@ -390,5 +404,38 @@ async function deleteExistingData(processName, repositoryId) {
       break;
     default:
       console.log(`알 수 없는 프로세스: ${processName}`);
+  }
+}
+
+async function retryWebhookRequest(
+  owner,
+  repo,
+  accessToken,
+  webhookUrl,
+  secret,
+  retries = 5
+) {
+  const maxRetries = retries;
+  let attempt = 0;
+  let delay = 1000;
+
+  while (attempt < maxRetries) {
+    try {
+      await createWebhook(owner, repo, accessToken, webhookUrl, secret);
+      console.log('웹훅 생성 성공');
+      return;
+    } catch (error) {
+      attempt++;
+      console.error(`웹훅 생성 실패 (시도: ${attempt}/${maxRetries}):`, error);
+
+      if (attempt < maxRetries) {
+        console.log(`다음 재시도는 ${delay}ms 후에 시작합니다...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2;
+      } else {
+        console.error('웹훅 생성 최대 재시도 횟수 초과. 재시도를 중단합니다.');
+        throw error;
+      }
+    }
   }
 }
