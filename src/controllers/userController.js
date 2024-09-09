@@ -344,6 +344,12 @@ export const handleWebhook = async (req, res) => {
     }
 
     const refreshData = async (processFunc, ...args) => {
+      console.log(
+        'processFunc',
+        processFunc.name,
+        'repositoryId',
+        repositoryId
+      );
       await deleteExistingData(processFunc.name, repositoryId);
       await processFunc(...args);
 
@@ -390,6 +396,13 @@ export const handleWebhook = async (req, res) => {
 };
 
 async function deleteExistingData(processName, repositoryId) {
+  console.log(
+    'deleteExistingData 실행',
+    'processName:',
+    processName,
+    'repositoryId',
+    repositoryId
+  );
   switch (processName) {
     case 'processSprints':
       await Sprint.deleteMany({ projectId: repositoryId });
@@ -406,6 +419,8 @@ async function deleteExistingData(processName, repositoryId) {
     default:
       console.log(`알 수 없는 프로세스: ${processName}`);
   }
+
+  console.log('deleteExistingData 끝');
 }
 
 async function retryWebhookRequest(
