@@ -361,8 +361,8 @@ export const handleWebhook = async (req, res) => {
       case 'issues':
         console.log(`${event} 이벤트 수신:`, payload.repository.name);
         processes = [
-          refreshData(processSprints, user, owner, repoName),
           refreshData(processIssues, user, owner, repoName),
+          refreshData(processSprints, user, owner, repoName),
         ];
         break;
       case 'pull_request':
@@ -403,21 +403,33 @@ async function deleteExistingData(processName, repositoryId) {
     'repositoryId',
     repositoryId
   );
-  switch (processName) {
-    case 'processSprints':
-      await Sprint.deleteMany({ projectId: repositoryId });
-      break;
-    case 'processIssues':
-      await Issue.deleteMany({ repositoryId });
-      break;
-    case 'processPullRequests':
-      await PullRequest.deleteMany({ repositoryId });
-      break;
-    case 'processDailyStats':
-      await DailyStats.deleteMany({ repositoryId });
-      break;
-    default:
-      console.log(`알 수 없는 프로세스: ${processName}`);
+
+  try {
+    switch (processName) {
+      case 'processIssues':
+        await Issue.deleteMany({ repositoryId });
+        console.log('Issue 데이터 삭제 완료');
+        break;
+      case 'processPullRequests':
+        await PullRequest.deleteMany({ repositoryId });
+        console.log('PullRequest 데이터 삭제 완료');
+        break;
+      case 'processDailyStats':
+        await DailyStats.deleteMany({ repositoryId });
+        console.log('DailyStats 데이터 삭제 완료');
+        break;
+      case 'processSprints':
+        await Sprint.deleteMany({ projectId: repositoryId });
+        console.log('Sprint 데이터 삭제 완료');
+        break;
+      default:
+        console.log(`알 수 없는 프로세스: ${processName}`);
+    }
+  } catch (error) {
+    console.error(
+      `데이터 삭제 중 오류 발생 (processName: ${processName}):`,
+      error
+    );
   }
 
   console.log('deleteExistingData 끝');
