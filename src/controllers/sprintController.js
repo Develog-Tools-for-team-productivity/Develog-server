@@ -137,7 +137,6 @@ const prepareSprintData = (sprintMap, repositoryInfo, projectInDb) => {
 };
 
 export const processSprints = async (user, owner, repo) => {
-  console.log('웹훅 실행 확인 로그');
   try {
     const { allItems, repositoryInfo } = await fetchAllItems(
       owner,
@@ -146,7 +145,6 @@ export const processSprints = async (user, owner, repo) => {
     );
 
     if (allItems.length === 0) {
-      console.log('저장할 스프린트 데이터가 없습니다.');
       return [];
     }
 

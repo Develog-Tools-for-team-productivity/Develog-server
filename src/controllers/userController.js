@@ -72,8 +72,8 @@ export const saveRepositoriesInfo = async (req, res) => {
             hook => hook.config.url === webhookUrl
           );
 
+          await processProject(user, repo);
           await Promise.allSettled([
-            processProject(user, repo),
             processPullRequests(user, owner, repoName),
             processSprints(user, owner, repoName),
             processDailyStats(user, owner, repoName),
