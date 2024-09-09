@@ -266,7 +266,7 @@ async function createWebhook(owner, repo, accessToken, webhookUrl, secret) {
   const data = {
     name: 'web',
     active: true,
-    events: ['push', 'pull_request'],
+    events: ['issues', 'pull_request'],
     config: {
       url: webhookUrl,
       content_type: 'json',
@@ -352,7 +352,6 @@ export const handleWebhook = async (req, res) => {
 
     let processes;
     switch (event) {
-      case 'push':
       case 'issues':
         console.log(`${event} 이벤트 수신:`, payload.repository.name);
         processes = [
