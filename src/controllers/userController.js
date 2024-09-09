@@ -53,7 +53,7 @@ export const saveRepositoriesInfo = async (req, res) => {
     ];
     await user.save();
 
-    const results = await Promise.all(
+    const results = await Promise.allSettled(
       newRepositories.map(async repo => {
         try {
           console.log('레포지토리 과정:', repo.name);
@@ -70,11 +70,13 @@ export const saveRepositoriesInfo = async (req, res) => {
           );
           console.log('기존 웹훅:', existingWebhook);
 
-          await processProject(user, repo);
-          await processPullRequests(user, owner, repoName);
-          await processSprints(user, owner, repoName);
-          await processDailyStats(user, owner, repoName);
-          await processIssues(user, owner, repoName);
+          await Promise.allSettled([
+            processProject(user, repo),
+            processPullRequests(user, owner, repoName),
+            processSprints(user, owner, repoName),
+            processDailyStats(user, owner, repoName),
+            processIssues(user, owner, repoName),
+          ]);
 
           console.log('웹훅 있는지 확인:', !existingWebhook);
 
